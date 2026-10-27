@@ -1,5 +1,5 @@
-use url::Url;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use crate::types::{LabeledPrice, LinkPreviewOptions, LivePeriod, MessageEntity, ParseMode};
 

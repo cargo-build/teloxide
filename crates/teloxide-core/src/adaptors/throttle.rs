@@ -108,7 +108,8 @@ impl<B> Throttle<B> {
         (this, worker)
     }
 
-    /// Creates new [`Throttle`] spawning the worker on the current compio runtime
+    /// Creates new [`Throttle`] spawning the worker on the current compio
+    /// runtime
     ///
     /// Note: it's recommended to use [`RequesterExt::throttle`] instead.
     ///
@@ -125,7 +126,8 @@ impl<B> Throttle<B> {
         this
     }
 
-    /// Creates new [`Throttle`] spawning the worker on the current compio runtime
+    /// Creates new [`Throttle`] spawning the worker on the current compio
+    /// runtime
     pub fn spawn_with_settings(bot: B, settings: Settings) -> Self
     where
         B: Requester + Clone + 'static,
@@ -200,8 +202,9 @@ impl From<&Recipient> for ChatIdHash {
         match value {
             Recipient::Id(id) => ChatIdHash::Id(*id),
             Recipient::ChannelUsername(username) => {
-                // FIXME: this could probably use a faster hasher, `DefaultHasher` is known to
-                //        be slow (it's not like we _need_ this to be fast, but still)
+                // FIXME: this could probably use a faster hasher,
+                // `DefaultHasher` is known to        be slow (it's not like we
+                // _need_ this to be fast, but still)
                 let mut hasher = std::collections::hash_map::DefaultHasher::new();
                 username.hash(&mut hasher);
                 let hash = hasher.finish();

@@ -833,11 +833,11 @@ pub(crate) fn hide_token(mut error: cyper::Error) -> cyper::Error {
 
                 // The part after the : in the token is the secret.
                 //
-                // In all bot tokens we could find the secret is 35 characters long and is
-                // 0-9a-zA-Z_- only.
+                // In all bot tokens we could find the secret is 35 characters
+                // long and is 0-9a-zA-Z_- only.
                 //
-                // It would be nice to research if TBA always has 35 character secrets or if it
-                // is just a coincidence.
+                // It would be nice to research if TBA always has 35 character
+                // secrets or if it is just a coincidence.
                 const SECRET_LENGTH: usize = 35;
                 let secret_character = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
 
@@ -869,8 +869,13 @@ mod tests {
     #[test]
     fn network_error_redacts_bot_and_local_api_paths() {
         let token = "123456789:abcdefghijklmnopqrstuvwxyzABCDEFGHI";
-        for path in [format!("/bot{token}/GetMe"), format!("/file/bot{token}/test.bin"), format!("/local/bot{token}/GetMe")] {
-            let error = cyper::Error::InvalidUrl(format!("http://localhost{path}").parse().unwrap());
+        for path in [
+            format!("/bot{token}/GetMe"),
+            format!("/file/bot{token}/test.bin"),
+            format!("/local/bot{token}/GetMe"),
+        ] {
+            let error =
+                cyper::Error::InvalidUrl(format!("http://localhost{path}").parse().unwrap());
             let error = super::RequestError::from(error);
             assert!(!format!("{error:?}").contains(token));
             assert!(!error.to_string().contains(token));

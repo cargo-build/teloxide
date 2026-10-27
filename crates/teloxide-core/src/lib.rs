@@ -70,7 +70,8 @@
 // (docs alias is defined in `.cargo/config.toml`)
 //
 // `dep_docsrs` is used for the same purpose, but when `teloxide-core` is built as a dependency
-// (see: `teloxide`). Dependency rustdoc uses its own configuration, so the wrapper passes a separate flag.
+// (see: `teloxide`). Dependency rustdoc uses its own configuration, so the wrapper passes a
+// separate flag.
 #![cfg_attr(all(any(docsrs, dep_docsrs), feature = "nightly"), feature(doc_cfg, doc_notable_trait))]
 #![cfg_attr(feature = "nightly", feature(type_alias_impl_trait))]
 #![cfg_attr(all(feature = "full", docsrs), deny(rustdoc::broken_intra_doc_links))]

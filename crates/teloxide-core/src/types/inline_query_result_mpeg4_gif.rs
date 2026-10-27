@@ -17,8 +17,8 @@ pub struct InlineQueryResultMpeg4Gif {
     /// Unique identifier for this result, 1-64 bytes.
     pub id: String,
 
-    // FIXME: rename everything so that it doesn't have `mpeg4_` (and similarly for other
-    // `InlineQueryResult*`)
+    // FIXME: rename everything so that it doesn't have `mpeg4_` (and similarly
+    // for other `InlineQueryResult*`)
     /// A valid URL for the MP4 file. File size must not exceed 1MB.
     pub mpeg4_url: url::Url,
 

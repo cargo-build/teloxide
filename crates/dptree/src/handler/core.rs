@@ -239,11 +239,12 @@ where
         next_continues: bool,
     ) -> HandlerSignature {
         HandlerSignature::Other {
-            // Take the union of (the first handler's input types) and (the difference
-            // between the second handler's input types and the first handler's output
-            // types). The difference is needed because the first handler can pass values to
-            // the second one by calling it. The first handler's obligations take priority
-            // over those of the second one.
+            // Take the union of (the first handler's input types) and (the
+            // difference between the second handler's input types and the first
+            // handler's output types). The difference is needed because the
+            // first handler can pass values to the second one by calling it.
+            // The first handler's obligations take priority over those of the
+            // second one.
             obligations: next_obligations
                 .clone()
                 .into_iter()
@@ -254,18 +255,19 @@ where
                 .chain(self_obligations.clone())
                 .collect(),
 
-            // Since the first handler can call the second one, guaranteed outcomes are the
-            // union of first handler's guaranteed outcomes and next handler's guaranteed
-            // outcomes. If the first handler decides not to call the second one, in this
-            // situation the guaranteed types can be ignored.
+            // Since the first handler can call the second one, guaranteed
+            // outcomes are the union of first handler's guaranteed outcomes and
+            // next handler's guaranteed outcomes. If the first handler decides
+            // not to call the second one, in this situation the guaranteed
+            // types can be ignored.
             guaranteed_outcomes: self_guaranteed_outcomes
                 .union(next_guaranteed_outcomes)
                 .cloned()
                 .collect(),
 
-            // Conditional outcomes are the union of both handlers' conditional outcomes,
-            // plus any guaranteed outcomes from the next handler that depend on conditional
-            // outcomes from the first handler.
+            // Conditional outcomes are the union of both handlers' conditional
+            // outcomes, plus any guaranteed outcomes from the next handler that
+            // depend on conditional outcomes from the first handler.
             conditional_outcomes: self_conditional_outcomes
                 .union(next_conditional_outcomes)
                 .cloned()
@@ -374,9 +376,9 @@ where
         next_conditional_outcomes: &BTreeSet<Type>,
     ) -> HandlerSignature {
         HandlerSignature::Other {
-            // Take the union of the input types of both handlers, but exclude types that
-            // the first handler guarantees to provide. The first handler's obligations take
-            // priority over those of the second one.
+            // Take the union of the input types of both handlers, but exclude
+            // types that the first handler guarantees to provide. The first
+            // handler's obligations take priority over those of the second one.
             obligations: next_obligations
                 .clone()
                 .into_iter()
@@ -384,8 +386,9 @@ where
                 .chain(self_obligations.clone())
                 .collect(),
 
-            // When the branched handler continues, the first handler's guaranteed outcomes
-            // are still available. When it breaks, there are no subsequent handlers.
+            // When the branched handler continues, the first handler's
+            // guaranteed outcomes are still available. When it breaks, there
+            // are no subsequent handlers.
             guaranteed_outcomes: self_guaranteed_outcomes.clone(),
 
             conditional_outcomes: self_conditional_outcomes
@@ -1038,8 +1041,8 @@ Make sure all the required values are provided to the handler. For more informat
         let h: Handler<H> = entry()
             .map(|/* In the final input types. */ _: A| B)
             .inspect(
-                |/* This type must be removed from the final input types because it is
-                  * provided by the `.map` above. */
+                |/* This type must be removed from the final input types
+                  * because it is provided by the `.map` above. */
                  _: B,
                  /* This type must "propagate" to the final input types. */
                  _: E| (),
@@ -1275,8 +1278,8 @@ Make sure all the required values are provided to the handler. For more informat
         // The first branch produces `A` and continues (`map` always continues).
         let first_branch = entry().map(|| A).inspect(|_: A| ()); // `inspect` continues, keeping `A` available
 
-        // The second branch can use `A`, because the first branch guarantees it and
-        // continues the execution.
+        // The second branch can use `A`, because the first branch guarantees it
+        // and continues the execution.
         let handler: Handler<()> = first_branch.branch(endpoint(|_: A| async {}));
 
         let result = handler.dispatch(deps![]).await;
@@ -1300,7 +1303,8 @@ Make sure all the required values are provided to the handler. For more informat
                     .branch(crate::filter_map(|| Some(A)).endpoint(|| async {}))
                     .branch(crate::filter_map(|_: A| Some(B)).endpoint(|| async {})),
             )
-            .branch(endpoint(|_: B| async {})); // `B` is not guaranteed to be available
+            .branch(endpoint(|_: B| async {})); // `B` is not guaranteed to be
+                                                // available
 
         type_check(handler.sig(), &deps![], &[]);
     }

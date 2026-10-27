@@ -5,7 +5,10 @@
 use std::{
     future::Future,
     pin::Pin,
-    sync::{atomic::{AtomicBool, Ordering}, Arc},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     task,
 };
 
@@ -84,8 +87,8 @@ impl Future for StopFlag {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::AtomicUsize;
     use futures::task::{waker, ArcWake};
+    use std::sync::atomic::AtomicUsize;
 
     struct WakeCount(AtomicUsize);
 
@@ -99,7 +102,8 @@ mod tests {
     fn stopping_wakes_every_independently_polled_clone() {
         let (token, flag) = mk_stop_token();
         let mut flags = [flag.clone(), flag];
-        let counts = [Arc::new(WakeCount(AtomicUsize::new(0))), Arc::new(WakeCount(AtomicUsize::new(0)))];
+        let counts =
+            [Arc::new(WakeCount(AtomicUsize::new(0))), Arc::new(WakeCount(AtomicUsize::new(0)))];
         let wakers = counts.each_ref().map(|count| waker(count.clone()));
         flags.iter_mut().zip(&wakers).for_each(|(flag, waker)| {
             assert!(Pin::new(flag).poll(&mut task::Context::from_waker(waker)).is_pending());

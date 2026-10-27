@@ -3,7 +3,10 @@ use std::path::Path;
 use bytes::Bytes;
 use futures::{future::LocalBoxFuture, stream::LocalBoxStream, FutureExt, StreamExt};
 
-use compio::{fs::File, io::{AsyncReadAt, AsyncWrite, AsyncWriteExt}};
+use compio::{
+    fs::File,
+    io::{AsyncReadAt, AsyncWrite, AsyncWriteExt},
+};
 
 use crate::{
     bot::Bot,
@@ -14,15 +17,11 @@ use crate::{
 impl Download for Bot {
     type Err<'dst> = DownloadError;
 
-    // I would like to unbox this, but my coworkers will kill me if they'll see yet
-    // another hand written `Future`. (waffle)
+    // I would like to unbox this, but my coworkers will kill me if they'll see
+    // yet another hand written `Future`. (waffle)
     type Fut<'dst> = LocalBoxFuture<'dst, Result<(), Self::Err<'dst>>>;
 
-    fn download_file<'dst, W>(
-        &self,
-        path: &'dst str,
-        destination: &'dst mut W,
-    ) -> Self::Fut<'dst>
+    fn download_file<'dst, W>(&self, path: &'dst str, destination: &'dst mut W) -> Self::Fut<'dst>
     where
         W: AsyncWrite + ?Sized,
     {
@@ -30,8 +29,9 @@ impl Download for Bot {
             Some(host) => ["localhost", "127.0.0.1", "::1"].contains(host),
             None => false,
         };
-        // If path is absolute and api_url contains localhost, it is pretty clear there
-        // is a local TBA server with --local option, we can just copy the file
+        // If path is absolute and api_url contains localhost, it is pretty
+        // clear there is a local TBA server with --local option, we can just
+        // copy the file
         if is_localhost && Path::new(&path).is_absolute() {
             return copy_file(path, destination).boxed_local();
         }
@@ -70,7 +70,8 @@ where
     let src_file = File::open(path).await?;
     let mut offset = 0;
     loop {
-        let compio::BufResult(result, buffer) = src_file.read_at(Vec::with_capacity(128 * 1024), offset).await;
+        let compio::BufResult(result, buffer) =
+            src_file.read_at(Vec::with_capacity(128 * 1024), offset).await;
         let len = result?;
         if len == 0 {
             break;

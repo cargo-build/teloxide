@@ -1,7 +1,8 @@
 //! PostgreSQL protocol sessions driven exclusively by compio sockets and tasks.
 //!
-//! Dropping an unfinished lease closes its session. Call [`Lease::recycle`] only
-//! after the complete result has been consumed to return a session to the pool.
+//! Dropping an unfinished lease closes its session. Call [`Lease::recycle`]
+//! only after the complete result has been consumed to return a session to the
+//! pool.
 
 #[cfg(any(feature = "native-tls", feature = "rustls"))]
 mod tls;
@@ -55,10 +56,12 @@ pub struct Lease<'a> {
 }
 
 impl Pool {
-    /// Resolves URL, environment and passfile options without opening a session.
+    /// Resolves URL, environment and passfile options without opening a
+    /// session.
     ///
     /// # Errors
-    /// Returns an error for malformed URLs, TLS options or mismatched credentials.
+    /// Returns an error for malformed URLs, TLS options or mismatched
+    /// credentials.
     pub fn new(database_url: &str, max_connections: NonZeroU32) -> io::Result<Self> {
         let (config, tls, statement_cache_capacity) = parse_config(database_url)?;
         #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
@@ -81,10 +84,12 @@ impl Pool {
         })
     }
 
-    /// Acquires a session within 30 seconds, including waiting and connection setup.
+    /// Acquires a session within 30 seconds, including waiting and connection
+    /// setup.
     ///
     /// # Errors
-    /// Returns connection, authentication or TLS errors without retrying queries.
+    /// Returns connection, authentication or TLS errors without retrying
+    /// queries.
     ///
     /// # Panics
     /// Panics if no compio runtime is active when a session is established.

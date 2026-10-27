@@ -5,11 +5,11 @@ use std::{
     time::Instant,
 };
 
+use async_channel as mpsc;
 use futures::{
     future::LocalBoxFuture,
     task::{Context, Poll},
 };
-use async_channel as mpsc;
 
 use crate::{
     adaptors::throttle::{channel, ChatIdHash, FreezeUntil, RequestLock},
@@ -185,7 +185,8 @@ where
         let (retry, freeze) = wait.await;
 
         let res = match (retry, &mut request) {
-            // Retries are turned on, use `send_ref` even if we have owned access
+            // Retries are turned on, use `send_ref` even if we have owned
+            // access
             (true, request) => {
                 let request = match request {
                     ShareableRequest::Shared(shared) => &**shared,
@@ -203,8 +204,8 @@ where
             let after = retry_after.duration();
             let until = Instant::now() + after;
 
-            // If we'll retry, we check that worker hasn't died at the start of the loop
-            // otherwise we don't care if the worker is alive or not
+            // If we'll retry, we check that worker hasn't died at the start of
+            // the loop otherwise we don't care if the worker is alive or not
             let _ = freeze.send(FreezeUntil { until, after, chat }).await;
 
             if retry {

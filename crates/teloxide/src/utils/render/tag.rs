@@ -57,8 +57,8 @@ impl PartialOrd for Tag<'_> {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Place {
     // HACK: `End` needs to be first because of the `Ord` Implementation.
-    // the reason is when comparing tags we want the `End` to be first if the offset
-    // is the same.
+    // the reason is when comparing tags we want the `End` to be first if the
+    // offset is the same.
     End,
     MidNewLine,
     Start,

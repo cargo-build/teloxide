@@ -27,8 +27,7 @@ impl Story {
             ChatKind::Private(c) => c.username.as_ref(),
         };
         username.map(|username| {
-            url::Url::parse(&format!("tg://resolve?domain={username}&story={}", self.id))
-                .unwrap()
+            url::Url::parse(&format!("tg://resolve?domain={username}&story={}", self.id)).unwrap()
         })
     }
 }

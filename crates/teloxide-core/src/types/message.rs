@@ -435,8 +435,9 @@ pub enum MediaKind {
     // - `Venue` must be in front of `Location`
     // - `Animation` must be in front of `Document`
     //
-    // This is needed so serde doesn't parse `Venue` as `Location` or `Animation` as `Document`
-    // (for backward compatability telegram duplicates some fields)
+    // This is needed so serde doesn't parse `Venue` as `Location` or
+    // `Animation` as `Document` (for backward compatability telegram duplicates
+    // some fields)
     //
     // See <https://github.com/teloxide/teloxide/issues/481>
     Animation(MediaAnimation),
@@ -2104,15 +2105,16 @@ impl Message {
 
         // Note: `t.me` links use bare chat ids
         let chat_id = match chat_id.to_bare() {
-            // For private chats (i.e.: DMs) we can't produce "normal" t.me link.
+            // For private chats (i.e.: DMs) we can't produce "normal" t.me
+            // link.
             //
-            // There are "tg://openmessage?user_id={0}&message_id={1}" links, which are
-            // supposed to open any chat, including private messages, but they
-            // are only supported by some telegram clients (e.g. Plus Messenger,
-            // Telegram for Android 4.9+).
+            // There are "tg://openmessage?user_id={0}&message_id={1}" links,
+            // which are supposed to open any chat, including private messages,
+            // but they are only supported by some telegram clients (e.g. Plus
+            // Messenger, Telegram for Android 4.9+).
             User(_) => return None,
-            // Similarly to user chats, there is no way to create a link to a message in a normal,
-            // private group.
+            // Similarly to user chats, there is no way to create a link to a
+            // message in a normal, private group.
             //
             // (public groups are always supergroup which are in turn channels).
             Group(_) => return None,
@@ -2120,11 +2122,11 @@ impl Message {
         };
 
         let url = match chat_username {
-            // If it's public group (i.e. not DM, not private group), we can produce
-            // "normal" t.me link (accessible to everyone).
+            // If it's public group (i.e. not DM, not private group), we can
+            // produce "normal" t.me link (accessible to everyone).
             Some(username) => format!("https://t.me/{0}/{1}", username, message_id.0),
-            // For private supergroups and channels we produce "private" t.me/c links. These are
-            // only accessible to the group members.
+            // For private supergroups and channels we produce "private" t.me/c
+            // links. These are only accessible to the group members.
             None => format!("https://t.me/c/{0}/{1}", chat_id, message_id.0),
         };
 

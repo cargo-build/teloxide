@@ -57,7 +57,8 @@ impl ChatMemberUpdated {
     pub fn mentioned_users(&self) -> impl Iterator<Item = &User> {
         [
             &self.from,
-            /* ignore `old_chat_member.user`, it should always be the same as the new one */
+            /* ignore `old_chat_member.user`, it should always be the same as
+             * the new one */
             &self.new_chat_member.user,
         ]
         .into_iter()

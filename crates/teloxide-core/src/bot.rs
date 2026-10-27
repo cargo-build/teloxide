@@ -94,8 +94,7 @@ impl Bot {
     {
         let token = Into::<String>::into(token).into();
         let api_url = Arc::new(
-            url::Url::parse(net::TELEGRAM_API_URL)
-                .expect("Failed to parse the default TBA URL"),
+            url::Url::parse(net::TELEGRAM_API_URL).expect("Failed to parse the default TBA URL"),
         );
 
         Self { token, api_url, client, request_timeout: net::DEFAULT_REQUEST_TIMEOUT }
@@ -108,8 +107,8 @@ impl Bot {
     /// If `TELOXIDE_API_URL` doesn't exist, returns to the default TBA URL.
     ///
     /// This function passes the value of `TELOXIDE_PROXY` into
-    /// [`cyper::proxy::Proxy::all`], if it exists, otherwise returns the default
-    /// client.
+    /// [`cyper::proxy::Proxy::all`], if it exists, otherwise returns the
+    /// default client.
     ///
     /// # Panics
     ///  - If cannot get the `TELOXIDE_TOKEN`  environmental variable.
@@ -201,8 +200,9 @@ impl Bot {
         self
     }
 
-    /// Sets the request and download deadline; long polls add their payload timeout.
-    /// The default is 17 seconds. Existing clones retain their own setting.
+    /// Sets the request and download deadline; long polls add their payload
+    /// timeout. The default is 17 seconds. Existing clones retain their own
+    /// setting.
     pub fn set_request_timeout(mut self, timeout: Duration) -> Self {
         self.request_timeout = timeout;
         self

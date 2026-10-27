@@ -100,7 +100,8 @@ impl CommandAttrs {
                     Description(d, is_doc) => {
                         join_string(
                             &mut this.description,
-                            // Sometimes doc comments include a space before them, this removes it
+                            // Sometimes doc comments include a space before
+                            // them, this removes it
                             d.strip_prefix(' ').unwrap_or(&d),
                             attr.sp,
                         );
@@ -134,7 +135,8 @@ impl CommandAttr {
         let sp = attr.span();
         let Attr { mut key, value } = attr;
 
-        let outermost_key = key.pop().unwrap(); // `Attr`'s invariants ensure `key.len() > 0`
+        let outermost_key = key.pop().unwrap(); // `Attr`'s invariants ensure
+                                                // `key.len() > 0`
 
         let kind = match &*outermost_key.to_string() {
             "doc" => {

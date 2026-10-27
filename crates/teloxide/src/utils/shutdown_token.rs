@@ -114,7 +114,8 @@ impl DispatcherState {
 
     fn store(&self, new: ShutdownState) {
         self.inner.store(new as _, Ordering::Relaxed);
-        // Notify all currently waiting listeners (like `Notify::notify_waiters`).
+        // Notify all currently waiting listeners (like
+        // `Notify::notify_waiters`).
         self.notify.notify(usize::MAX);
     }
 
@@ -128,7 +129,9 @@ impl DispatcherState {
             .map(ShutdownState::from_u8)
             .map_err(ShutdownState::from_u8)
             // FIXME: `Result::inspect` when :(
-            .inspect(|_| { self.notify.notify(usize::MAX); })
+            .inspect(|_| {
+                self.notify.notify(usize::MAX);
+            })
     }
 }
 

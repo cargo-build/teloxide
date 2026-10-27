@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
-use url::Url;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 /// This object describes the state of a revenue withdrawal operation.
 #[derive(Clone, Debug)]

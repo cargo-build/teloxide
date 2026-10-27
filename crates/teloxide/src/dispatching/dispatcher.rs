@@ -279,7 +279,8 @@ pub struct Dispatcher<R, Err, Key> {
     worker_queue_size: usize,
     current_number_of_active_workers: Rc<AtomicU32>,
     max_number_of_active_workers: Rc<AtomicU32>,
-    // Channel sender parts associated with chat IDs that consume updates sequentially.
+    // Channel sender parts associated with chat IDs that consume updates
+    // sequentially.
     workers: HashMap<Key, Worker>,
     // The default sender part that consumes updates concurrently.
     default_worker: Option<Worker>,
@@ -394,7 +395,8 @@ where
         Eh: ErrorHandler<UListener::Err> + 'a,
         UListener::Err: Debug,
     {
-        // FIXME: there should be a way to check if dependency is already inserted
+        // FIXME: there should be a way to check if dependency is already
+        // inserted
         let me = self.bot.get_me().send().await?;
         self.dependencies.insert(me);
         self.dependencies.insert(self.bot.clone());
@@ -546,9 +548,7 @@ where
         let handles = self
             .workers
             .iter()
-            .filter(|(_, worker)| {
-                worker.tx.is_empty() && worker.is_waiting.load(Ordering::Relaxed)
-            })
+            .filter(|(_, worker)| worker.tx.is_empty() && worker.is_waiting.load(Ordering::Relaxed))
             .map(|(k, _)| k)
             .cloned()
             .collect::<Vec<_>>()
@@ -564,9 +564,10 @@ where
             });
 
         for handle in handles {
-            // We must wait for worker to stop anyway, even though it should stop
-            // immediately. This helps in case if we've checked that the worker
-            // is waiting in between it received the update and set the flag.
+            // We must wait for worker to stop anyway, even though it should
+            // stop immediately. This helps in case if we've checked that the
+            // worker is waiting in between it received the update and set the
+            // flag.
             let _ = handle.await;
         }
     }
@@ -718,7 +719,9 @@ mod tests {
     };
 
     use super::*;
-    use crate::{error_handlers::IgnoringErrorHandler, stop::mk_stop_token, update_listeners::AsUpdateStream};
+    use crate::{
+        error_handlers::IgnoringErrorHandler, stop::mk_stop_token, update_listeners::AsUpdateStream,
+    };
 
     /// An update listener that yields a scripted list of updates and keeps
     /// pending forever until its stop token is used.
@@ -741,10 +744,7 @@ mod tests {
         type Stream = ScriptedStream;
 
         fn as_stream(&mut self) -> Self::Stream {
-            ScriptedStream {
-                updates: std::mem::take(&mut self.updates),
-                flag: self.flag.clone(),
-            }
+            ScriptedStream { updates: std::mem::take(&mut self.updates), flag: self.flag.clone() }
         }
     }
 
@@ -917,9 +917,12 @@ mod tests {
             done.await;
         });
 
-        compio::time::timeout(Duration::from_secs(2),
-            dp.start_listening(listener, IgnoringErrorHandler::new(), Some(stop_token)))
-            .await.expect("dispatcher must stop even if the shutdown notification preceded its wait");
+        compio::time::timeout(
+            Duration::from_secs(2),
+            dp.start_listening(listener, IgnoringErrorHandler::new(), Some(stop_token)),
+        )
+        .await
+        .expect("dispatcher must stop even if the shutdown notification preceded its wait");
         supervisor.await.expect("supervisor task failed");
 
         let processed = processed.borrow();
@@ -954,8 +957,11 @@ mod tests {
             }
         });
         let worker = spawn_default_worker(
-            DependencyMap::new(), Rc::new(handler), Rc::new(|_| Box::pin(async {})),
-            IgnoringErrorHandler::new(), 4,
+            DependencyMap::new(),
+            Rc::new(handler),
+            Rc::new(|_| Box::pin(async {})),
+            IgnoringErrorHandler::new(),
+            4,
         );
         for id in 1..=3 {
             worker.tx.send(make_update(1, id, String::new())).await.unwrap();
@@ -964,7 +970,9 @@ mod tests {
             for _ in 0..3 {
                 wait_started.recv().await.unwrap();
             }
-        }).await.expect("unkeyed handlers must all start before any completes");
+        })
+        .await
+        .expect("unkeyed handlers must all start before any completes");
         assert_eq!(completed.get(), 0);
         for _ in 0..3 {
             release.send(()).await.unwrap();
@@ -973,5 +981,4 @@ mod tests {
         compio::time::timeout(Duration::from_secs(2), worker.handle).await.unwrap().unwrap();
         assert_eq!(completed.get(), 3);
     }
-
 }

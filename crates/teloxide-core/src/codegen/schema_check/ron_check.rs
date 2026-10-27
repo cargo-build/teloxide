@@ -113,8 +113,8 @@ fn check_ron_siblings(
 
     for param in &method.arguments {
         let mut param_name = param.name.clone();
-        escape_kw(&mut param_name); // Converts type to type_. Will think field is missing
-                                    // otherwise.
+        escape_kw(&mut param_name); // Converts type to type_. Will think field
+                                    // is missing otherwise.
 
         // Try to find both parameters
         let maybe_ron_param = find_ron_param_by_name(&param_name, ron_method);
@@ -203,8 +203,8 @@ fn check_ron_siblings_only_one_field(
             param: param.name.clone(),
         });
     } else {
-        // It is in some exceptions. We don't care about optional fields, since its an
-        // exception.
+        // It is in some exceptions. We don't care about optional fields, since
+        // its an exception.
         check_param(ron_param, param, ron_method_name, true, errors, exceptions);
     }
 }
@@ -221,7 +221,8 @@ fn check_ron_params(
         if all_params.contains(&param1) && all_params.contains(&param2) {
             if let Some(ron_param1) = find_ron_param_by_name(param1, ron_method) {
                 if let Some(ron_param2) = find_ron_param_by_name(param2, ron_method) {
-                    // If they arent optional then its like chat_id and user_id in getChatMember
+                    // If they arent optional then its like chat_id and user_id
+                    // in getChatMember
                     if let schema::Type::Option(_) = ron_param1.ty {
                         if let schema::Type::Option(_) = ron_param2.ty {
                             errors.push(ApiCheckError::ParamsShouldBeSiblings {
@@ -301,8 +302,8 @@ fn check_param(
     ron_param: &schema::Param,
     param: &Argument,
     method_name: String,
-    // If it is a method with a sibling, some optional fields could be required in our
-    // schema
+    // If it is a method with a sibling, some optional fields could be required
+    // in our schema
     ignore_optional: bool,
     errors: &mut Vec<ApiCheckError>,
     exceptions: &Exceptions,
@@ -342,8 +343,8 @@ fn check_type(
     errors: &mut Vec<ApiCheckError>,
     exceptions: &Exceptions,
 ) {
-    // Assumes that the ron_type is not Option, since api_type has `required` field
-    // instead
+    // Assumes that the ron_type is not Option, since api_type has `required`
+    // field instead
     assert!(!matches!(ron_type, &schema::Type::Option(_)), "ron_type can't be Option");
 
     // If it matches, do nothing
@@ -364,7 +365,8 @@ fn check_type(
                 schema::Type::u16 => (u16::MIN as i64, u16::MAX as i64),
                 schema::Type::u32 => (u32::MIN as i64, u32::MAX as i64),
                 schema::Type::u64 => (u64::MIN as i64, i64::MAX), // u64::MAX will
-                // overflow. And the TBA will never return something bigger than i64.
+                // overflow. And the TBA will never return something bigger than
+                // i64.
                 schema::Type::i32 => (i32::MIN as i64, i32::MAX as i64),
                 schema::Type::i64 => (i64::MIN, i64::MAX),
                 schema::Type::DateTime => (i64::MIN, i64::MAX),
@@ -434,8 +436,8 @@ mod tests {
         let api_schema = get_api_schema();
         let mut errors = vec![];
 
-        // Here you can set exceptions for fields that don't exist in our schema for
-        // some reason
+        // Here you can set exceptions for fields that don't exist in our schema
+        // for some reason
         let mut exceptions = Exceptions::new(vec![
             // The Inline methods can't set these values
             Exception::MethodField {
@@ -469,7 +471,8 @@ mod tests {
             },
         ]);
 
-        // Some types can be more narrow in teloxide, e.g. `Me` is a subset of `User`
+        // Some types can be more narrow in teloxide, e.g. `Me` is a subset of
+        // `User`
         exceptions.extend(vec![
             Exception::FieldType {
                 ron_raw_type: "ReplyMarkup".to_owned(),
@@ -478,9 +481,9 @@ mod tests {
             Exception::FieldType { ron_raw_type: "Me".to_owned(), actual_type: "User".to_owned() },
         ]);
 
-        // If checker finds that one sibling has that field name, while the other
-        // doesn't, it will consider it normal. To add a one-time exception,
-        // refer to `missing_field_exceptions` argument.
+        // If checker finds that one sibling has that field name, while the
+        // other doesn't, it will consider it normal. To add a one-time
+        // exception, refer to `missing_field_exceptions` argument.
         exceptions.extend(vec![
             Exception::SiblingParam { param: "inline_message_id".to_owned() },
             Exception::SiblingParam { param: "user_id".to_owned() },

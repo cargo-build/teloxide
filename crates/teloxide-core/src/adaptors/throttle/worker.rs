@@ -4,10 +4,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use either::Either;
-use futures::{future, FutureExt as _};
 use async_channel::{self as mpsc, TryRecvError};
-use futures::channel::oneshot::Sender;
+use either::Either;
+use futures::{channel::oneshot::Sender, future, FutureExt as _};
 use vecrem::VecExt;
 
 use crate::{
@@ -123,9 +122,9 @@ pub(super) async fn worker<B>(
 
     while !rx_is_closed || !queue.is_empty() {
         // FIXME(waffle):
-        // 1. If the `queue` is empty, `read_from_rx` call down below will 'block'
-        //    execution until a request is sent. While the execution is 'blocked' no
-        //    `InfoMessage`s could be answered.
+        // 1. If the `queue` is empty, `read_from_rx` call down below will
+        //    'block' execution until a request is sent. While the execution is
+        //    'blocked' no `InfoMessage`s could be answered.
         //
         // 2. If limits are decreased, ideally we want to shrink queue.
         //
@@ -148,7 +147,8 @@ pub(super) async fn worker<B>(
                 Either::Right(()) => break,
             }
         }
-        //debug_assert_eq!(queue.capacity(), limits.messages_per_sec_overall as usize);
+        //debug_assert_eq!(queue.capacity(), limits.messages_per_sec_overall as
+        // usize);
 
         if queue.len() == queue.capacity() && last_queue_full.elapsed() > QUEUE_FULL_DELAY {
             last_queue_full = Instant::now();
@@ -183,8 +183,8 @@ pub(super) async fn worker<B>(
             }
         }
 
-        // as truncates which is ok since in case of truncation it would always be >=
-        // limits.overall_s
+        // as truncates which is ok since in case of truncation it would always
+        // be >= limits.overall_s
         let used = history.iter().rev().take_while(|(_, time)| time > &sec_back).count() as u32;
         let mut allowed = limits.messages_per_sec_overall.saturating_sub(used);
 
@@ -229,7 +229,8 @@ pub(super) async fn worker<B>(
                 let chat = *chat;
                 let (_, lock) = entry.remove();
 
-                // Only count request as sent if the request wasn't dropped before unlocked
+                // Only count request as sent if the request wasn't dropped
+                // before unlocked
                 if lock.unlock(retry, freeze_tx.clone()).is_ok() {
                     *requests_sent.per_sec.entry(chat).or_insert(0) += 1;
                     *requests_sent.per_min.entry(chat).or_insert(0) += 1;
@@ -280,17 +281,18 @@ async fn freeze(
     while let Some(freeze_until) = imm.take().or_else(|| rx.try_recv().ok()) {
         let FreezeUntil { until, after, chat } = freeze_until;
 
-        // Clippy thinks that this `.as_deref_mut()` doesn't change the type (&mut
-        // HashMap -> &mut HashMap), but it's actually a reborrow (the lifetimes
-        // differ), since we are in a loop, simply using `slow_mode` would produce a
-        // moved-out error.
+        // Clippy thinks that this `.as_deref_mut()` doesn't change the type
+        // (&mut HashMap -> &mut HashMap), but it's actually a reborrow (the
+        // lifetimes differ), since we are in a loop, simply using `slow_mode`
+        // would produce a moved-out error.
         #[allow(clippy::needless_option_as_deref)]
         if let Some(slow_mode) = slow_mode.as_deref_mut() {
             // TODO: do something with channels?...
             if let hash @ ChatIdHash::Id(id) = chat {
                 // TODO: maybe not call `get_chat` every time?
 
-                // At this point there isn't much we can do with the error besides ignoring
+                // At this point there isn't much we can do with the error
+                // besides ignoring
                 if let Ok(chat) = bot.get_chat(id).await {
                     match chat.slow_mode_delay() {
                         Some(delay) => {
@@ -312,8 +314,8 @@ async fn freeze(
             .and_then(|m| m.get(&chat).map(|(delay, _)| delay <= &after))
             .unwrap_or(false);
 
-        // Do not sleep if slow mode is enabled since the freeze is most likely caused
-        // by the said slow mode and not by the global limits.
+        // Do not sleep if slow mode is enabled since the freeze is most likely
+        // caused by the said slow mode and not by the global limits.
         if !slow_mode_enabled_and_likely_the_cause {
             log::warn!(
                 "freezing the bot for approximately {after:?} due to `RetryAfter` error from \

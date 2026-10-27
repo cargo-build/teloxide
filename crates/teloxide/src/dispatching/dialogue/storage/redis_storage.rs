@@ -38,7 +38,8 @@ pub struct RedisStorage<S> {
 }
 
 impl<S> RedisStorage<S> {
-    /// Configures a bounded connection pool using Redis URL authentication and database settings.
+    /// Configures a bounded connection pool using Redis URL authentication and
+    /// database settings.
     pub async fn open(
         url: &str,
         serializer: S,

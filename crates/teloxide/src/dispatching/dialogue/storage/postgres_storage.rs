@@ -37,7 +37,8 @@ pub struct PostgresStorage<S> {
 }
 
 impl<S> PostgresStorage<S> {
-    /// Opens at most `max_connections` sessions and bootstraps the dialogue table.
+    /// Opens at most `max_connections` sessions and bootstraps the dialogue
+    /// table.
     ///
     /// The URL supplies authentication, database, host, port and TLS settings.
     pub async fn open(

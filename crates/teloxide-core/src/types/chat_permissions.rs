@@ -254,7 +254,8 @@ struct ChatPermissionsRaw {
     // HACK: do not `skip_serializing_if = "Not::not"`, from tg docs:
     //       > If omitted defaults to the value of `can_pin_messages`
     //       but we don't have two different values for "absent" and "false"...
-    //       or did they mean that `can_pin_messages` implies `can_manage_topics`?..
+    //       or did they mean that `can_pin_messages` implies
+    // `can_manage_topics`?..
     #[serde(default)]
     can_manage_topics: bool,
 }
@@ -340,7 +341,8 @@ impl From<ChatPermissionsRaw> for ChatPermissions {
         if can_pin_messages {
             this |= Self::PIN_MESSAGES;
         }
-        // FIXME: should we do `|| can_pin_messages` here? (the same tg doc weirdness)
+        // FIXME: should we do `|| can_pin_messages` here? (the same tg doc
+        // weirdness)
         if can_manage_topics {
             this |= Self::MANAGE_TOPICS
         }

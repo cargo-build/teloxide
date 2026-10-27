@@ -1,18 +1,15 @@
 use bytes::Bytes;
 use compio::io::AsyncRead;
+use cyper::{multipart::Part, Body};
 use futures::{
     future::{ready, Either},
     stream::{self, LocalBoxStream},
     StreamExt, TryStreamExt,
 };
 use once_cell::sync::OnceCell;
-use cyper::{multipart::Part, Body};
 use serde::Serialize;
 
-
-use std::{
-    borrow::Cow, fmt, future::Future, io, mem, path::PathBuf, rc::Rc, sync::Arc,
-};
+use std::{borrow::Cow, fmt, future::Future, io, mem, path::PathBuf, rc::Rc, sync::Arc};
 
 use crate::types::{self, InputSticker};
 
@@ -194,7 +191,8 @@ impl InputFile {
         let filename = self.take_or_guess_filename();
 
         match self.inner {
-            // Url and FileId are serialized just as strings, they don't need additional parts
+            // Url and FileId are serialized just as strings, they don't need
+            // additional parts
             Url(_) | FileId(_) => None,
 
             File(path_to_file) => {
@@ -259,22 +257,26 @@ impl Read {
                     Some(result) => buffered_body(result),
                     None => {
                         let stream = inner.buffer.into_inner().reader.map_err(cyper::Error::System);
-                        // Cyper's Hyper body requires Send; InputFile and Bot remain local.
+                        // Cyper's Hyper body requires Send; InputFile and Bot
+                        // remain local.
                         Body::stream(send_wrapper::SendWrapper::new(stream))
                     }
                 }
             }
             Err(inner) => {
-                let result = inner.complete.get_or_init(|| async {
-                    let mut buffer = inner.buffer.lock().await;
-                    while let Some(chunk) = buffer.reader.next().await {
-                        match chunk {
-                            Ok(chunk) => buffer.chunks.push(chunk),
-                            Err(err) => return Err(Arc::new(err)),
+                let result = inner
+                    .complete
+                    .get_or_init(|| async {
+                        let mut buffer = inner.buffer.lock().await;
+                        while let Some(chunk) = buffer.reader.next().await {
+                            match chunk {
+                                Ok(chunk) => buffer.chunks.push(chunk),
+                                Err(err) => return Err(Arc::new(err)),
+                            }
                         }
-                    }
-                    Ok(mem::take(&mut buffer.chunks))
-                }).await;
+                        Ok(mem::take(&mut buffer.chunks))
+                    })
+                    .await;
                 buffered_body(result.clone())
             }
         };
@@ -298,7 +300,8 @@ mod tests {
         let reader = stream::iter([
             Ok(Bytes::from_static(b"prefix")),
             Err(io::Error::other("fixture reader failure")),
-        ]).boxed_local();
+        ])
+        .boxed_local();
         let read = Read {
             inner: Rc::new(ReadInner {
                 buffer: async_lock::Mutex::new(ReadBuffer { reader, chunks: Vec::new() }),
@@ -308,8 +311,11 @@ mod tests {
         let clones = [read.clone(), read.clone(), read];
         for read in clones {
             let part = read.into_part(Cow::Borrowed("upload.bin")).await;
-            let result = cyper::multipart::Form::new().part("file", part).into_stream()
-                .try_collect::<Vec<_>>().await;
+            let result = cyper::multipart::Form::new()
+                .part("file", part)
+                .into_stream()
+                .try_collect::<Vec<_>>()
+                .await;
             assert!(result.unwrap_err().to_string().contains("fixture reader failure"));
         }
     }
@@ -335,8 +341,13 @@ mod tests {
         drop(initializing);
         release.send(()).unwrap();
         let part = remaining.into_part(Cow::Borrowed("upload.bin")).await;
-        let body = cyper::multipart::Form::new().part("file", part).into_stream()
-            .try_collect::<Vec<_>>().await.unwrap().concat();
+        let body = cyper::multipart::Form::new()
+            .part("file", part)
+            .into_stream()
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap()
+            .concat();
         let expected = b"cached prefix and suffix";
         assert!(body.windows(expected.len()).any(|chunk| chunk == expected));
     }
@@ -347,10 +358,16 @@ mod tests {
         let remaining = input.clone();
         for input in [input, remaining] {
             let part = input.into_part().unwrap().await;
-            let chunks = cyper::multipart::Form::new().part("file", part).into_stream()
-                .try_collect::<Vec<_>>().await.unwrap();
+            let chunks = cyper::multipart::Form::new()
+                .part("file", part)
+                .into_stream()
+                .try_collect::<Vec<_>>()
+                .await
+                .unwrap();
             let body = chunks.concat();
-            assert!(body.windows(b"replayed upload bytes".len()).any(|chunk| chunk == b"replayed upload bytes"));
+            assert!(body
+                .windows(b"replayed upload bytes".len())
+                .any(|chunk| chunk == b"replayed upload bytes"));
         }
     }
 }

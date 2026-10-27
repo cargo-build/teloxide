@@ -29,7 +29,8 @@ impl<'a> Renderer<'a> {
     ///   applied to the text.
     #[must_use]
     pub fn new(text: &'a str, entities: &'a [MessageEntity]) -> Self {
-        // get the needed size for the new tags that we want to parse from entities
+        // get the needed size for the new tags that we want to parse from
+        // entities
         let needed_size: usize = entities
             .iter()
             .filter(|e| {

@@ -124,12 +124,12 @@ mod tests {
                     InputMediaVideo::new(InputFile::file_id("17".into())).supports_streaming(true),
                 ),
                 InputMedia::Animation(
-                    InputMediaAnimation::new(InputFile::read(
-                        Cursor::new(File::open("../../media/example.gif").await.unwrap()),
-                    ))
-                    .thumbnail(InputFile::read(
-                        Cursor::new(File::open("../../media/teloxide-core-logo.png").await.unwrap()),
-                    ))
+                    InputMediaAnimation::new(InputFile::read(Cursor::new(
+                        File::open("../../media/example.gif").await.unwrap(),
+                    )))
+                    .thumbnail(InputFile::read(Cursor::new(
+                        File::open("../../media/teloxide-core-logo.png").await.unwrap(),
+                    )))
                     .duration(17),
                 ),
                 InputMedia::Audio(
@@ -173,9 +173,9 @@ mod tests {
                 InputFile::file("../../media/teloxide-core-logo.png"),
             )
             .caption_entities(entities())
-            .thumbnail(InputFile::read(
-                Cursor::new(File::open("../../media/teloxide-core-logo.png").await.unwrap()),
-            )),
+            .thumbnail(InputFile::read(Cursor::new(
+                File::open("../../media/teloxide-core-logo.png").await.unwrap(),
+            ))),
         )
         .unwrap()
         .await;

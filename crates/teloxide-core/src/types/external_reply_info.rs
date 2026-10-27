@@ -40,8 +40,9 @@ pub enum ExternalReplyInfoKind {
     // - `Venue` must be in front of `Location`
     // - `Animation` must be in front of `Document`
     //
-    // This is needed so serde doesn't parse `Venue` as `Location` or `Animation` as `Document`
-    // (for backward compatability telegram duplicates some fields).
+    // This is needed so serde doesn't parse `Venue` as `Location` or
+    // `Animation` as `Document` (for backward compatability telegram duplicates
+    // some fields).
     //
     // See <https://github.com/teloxide/teloxide/issues/481>
     Animation(Animation),

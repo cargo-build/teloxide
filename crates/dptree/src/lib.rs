@@ -13,7 +13,7 @@
 //!         .branch(smiles_handler())
 //!         .branch(sqrt_handler())
 //!         .branch(not_found_handler());
-//!
+//!     
 //!     assert_eq!(
 //!         web_server.dispatch(dptree::deps!["/smile"]).await,
 //!         ControlFlow::Break("🙃".to_owned())

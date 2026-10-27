@@ -1,10 +1,17 @@
 #![cfg(feature = "webhooks-tako")]
 
-use std::{sync::{Arc, Mutex}, time::{Duration, Instant}};
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use futures::StreamExt;
 use tako::{extractors::body::collect_body, router::Router, types::Request, CompioServer};
-use teloxide::{prelude::*, types::AllowedUpdate, update_listeners::{AsUpdateStream, Polling, UpdateListener}};
+use teloxide::{
+    prelude::*,
+    types::AllowedUpdate,
+    update_listeners::{AsUpdateStream, Polling, UpdateListener},
+};
 
 #[compio::test]
 async fn polling_backs_off_retains_offsets_and_acknowledges_stop() {

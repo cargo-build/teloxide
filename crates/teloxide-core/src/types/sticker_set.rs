@@ -110,9 +110,9 @@ mod tests {
     }
 
     #[test]
-    // In TBA7.2 fields `is_video` and `is_audio` are removed, so it's the breaking
-    // change (previously, sticker set format inference heavily relied upon these
-    // fields)
+    // In TBA7.2 fields `is_video` and `is_audio` are removed, so it's the
+    // breaking change (previously, sticker set format inference heavily relied
+    // upon these fields)
     fn test() {
         let json = r#"{
             "name": "tba66_by_memorization_helper_bot",

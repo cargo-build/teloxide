@@ -52,10 +52,11 @@ async fn main() {
             // Filtering allow you to filter updates by some condition.
             dptree::filter(|msg: Message| msg.chat.is_group() || msg.chat.is_supergroup())
                 .branch(
-                    // Filtering by mention allows to filter only `/repeat@my_bot` commands.
-                    // Use if you want to make sure that users refer specifically to your bot.
-                    // Same as filter_command, the next handlers will receive a parsed
-                    // `GroupCommand`.
+                    // Filtering by mention allows to filter only
+                    // `/repeat@my_bot` commands. Use if you want to make sure
+                    // that users refer specifically to your bot.
+                    // Same as filter_command, the next handlers will receive a
+                    // parsed `GroupCommand`.
                     dptree::entry().filter_mention_command::<GroupCommand>().endpoint(
                         |bot: Bot, msg: Message, cmd: GroupCommand| async move {
                             match cmd {
@@ -78,8 +79,8 @@ async fn main() {
                 ),
         )
         .branch(
-            // There are some extension filtering functions on `Message`. The following filter will
-            // filter only messages with dices.
+            // There are some extension filtering functions on `Message`. The
+            // following filter will filter only messages with dices.
             Message::filter_dice().endpoint(|bot: Bot, msg: Message, dice: Dice| async move {
                 bot.send_message(msg.chat.id, format!("Dice value: {}", dice.value))
                     .reply_to(msg)

@@ -1845,13 +1845,14 @@ fn codegen_requester_forward() {
                 .map(|(l, r)| (l, min_prefix(l, r)))
                 .collect();
 
-            // FIXME: This hard-coded value has been set to avoid conflicting generic
-            // parameter 'B' with impl<B> Requester... in all the adaptors and other places
+            // FIXME: This hard-coded value has been set to avoid conflicting
+            // generic parameter 'B' with impl<B> Requester... in all the
+            // adaptors and other places
             //
-            // One fix could be to take full abbrevation for all the parameters instead of
-            // just the first character. Other fix is to change the generic parameter name
-            // in all the impl blocks to something like 'Z' because that is very less likely
-            // to conflict in future.
+            // One fix could be to take full abbrevation for all the parameters
+            // instead of just the first character. Other fix is to change the
+            // generic parameter name in all the impl blocks to something like
+            // 'Z' because that is very less likely to conflict in future.
             if prefixes.contains_key("business_connection_id") {
                 prefixes["business_connection_id"] = "BCI";
             }

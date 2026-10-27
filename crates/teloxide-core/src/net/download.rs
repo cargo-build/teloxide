@@ -1,9 +1,12 @@
-use std::{future::Future, time::{Duration, Instant}};
+use std::{
+    future::Future,
+    time::{Duration, Instant},
+};
 
 use bytes::Bytes;
-use futures::{Stream, StreamExt, TryFutureExt};
-use cyper::Client;
 use compio::io::{AsyncWrite, AsyncWriteExt};
+use cyper::Client;
+use futures::{Stream, StreamExt, TryFutureExt};
 use url::Url;
 
 use crate::{errors::DownloadError, net::file_url};
@@ -33,14 +36,14 @@ pub trait Download {
     /// ## Examples
     ///
     /// ```no_run
+    /// use compio::fs;
+    /// use std::io::Cursor;
     /// use teloxide_core::{
     ///     net::Download,
     ///     requests::{Request, Requester},
     ///     types::{File, FileId},
     ///     Bot,
     /// };
-    /// use compio::fs;
-    /// use std::io::Cursor;
     ///
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let bot = Bot::new("TOKEN");
@@ -53,11 +56,7 @@ pub trait Download {
     ///
     /// [`GetFile`]: crate::payloads::GetFile
     /// [`download_file_stream`]: Self::download_file_stream
-    fn download_file<'dst, W>(
-        &self,
-        path: &'dst str,
-        destination: &'dst mut W,
-    ) -> Self::Fut<'dst>
+    fn download_file<'dst, W>(&self, path: &'dst str, destination: &'dst mut W) -> Self::Fut<'dst>
     where
         W: AsyncWrite + ?Sized;
 
@@ -127,7 +126,8 @@ pub fn download_file_stream(
     async move {
         let deadline = super::request_deadline(timeout, None)?;
         let response = compio::time::timeout_at(deadline, request?.send())
-            .await.map_err(|_| cyper::Error::Timeout)??;
+            .await
+            .map_err(|_| cyper::Error::Timeout)??;
         let status = response.status();
         if status.is_client_error() || status.is_server_error() {
             return Err(DownloadError::HttpStatus(status));
@@ -137,7 +137,10 @@ pub fn download_file_stream(
     .try_flatten_stream()
 }
 
-fn deadline_stream<S>(stream: S, deadline: Instant) -> impl Stream<Item = Result<Bytes, DownloadError>>
+fn deadline_stream<S>(
+    stream: S,
+    deadline: Instant,
+) -> impl Stream<Item = Result<Bytes, DownloadError>>
 where
     S: Stream<Item = cyper::Result<Bytes>> + 'static,
 {
@@ -165,9 +168,12 @@ mod tests {
 
     #[compio::test]
     async fn stalled_body_returns_one_timeout_then_ends() {
-        let stream = deadline_stream(futures::stream::pending(), Instant::now() + Duration::from_millis(5));
+        let stream =
+            deadline_stream(futures::stream::pending(), Instant::now() + Duration::from_millis(5));
         let mut stream = std::pin::pin!(stream);
-        assert!(matches!(stream.next().await, Some(Err(DownloadError::Network(error))) if matches!(*error, cyper::Error::Timeout)));
+        assert!(
+            matches!(stream.next().await, Some(Err(DownloadError::Network(error))) if matches!(*error, cyper::Error::Timeout))
+        );
         assert!(stream.next().await.is_none());
     }
 }

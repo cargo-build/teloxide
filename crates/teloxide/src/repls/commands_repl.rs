@@ -80,7 +80,11 @@ pub trait CommandReplExt {
     ///
     /// See [`CommandReplExt`] for more details.
     #[must_use]
-    fn repl_with_listener<'a, R, H, L, Args>(bot: R, handler: H, listener: L) -> LocalBoxFuture<'a, ()>
+    fn repl_with_listener<'a, R, H, L, Args>(
+        bot: R,
+        handler: H,
+        listener: L,
+    ) -> LocalBoxFuture<'a, ()>
     where
         H: Injectable<ResponseResult<()>, Args> + 'static,
         L: UpdateListener + 'a,
@@ -110,7 +114,11 @@ where
         })
     }
 
-    fn repl_with_listener<'a, R, H, L, Args>(bot: R, handler: H, listener: L) -> LocalBoxFuture<'a, ()>
+    fn repl_with_listener<'a, R, H, L, Args>(
+        bot: R,
+        handler: H,
+        listener: L,
+    ) -> LocalBoxFuture<'a, ()>
     where
         H: Injectable<ResponseResult<()>, Args> + 'static,
         L: UpdateListener + 'a,
@@ -119,8 +127,8 @@ where
     {
         use crate::dispatching::Dispatcher;
 
-        // Other update types are of no interest to use since this REPL is only for
-        // commands. See <https://github.com/teloxide/teloxide/issues/557>.
+        // Other update types are of no interest to use since this REPL is only
+        // for commands. See <https://github.com/teloxide/teloxide/issues/557>.
         let ignore_update = |_upd| Box::pin(async {});
 
         Box::pin(async move {

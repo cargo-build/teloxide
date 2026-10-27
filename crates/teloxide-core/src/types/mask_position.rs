@@ -44,7 +44,8 @@ impl Hash for MaskPosition {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.point.hash(state);
 
-        // Skip values which are NaN and canonicalize negative zero (-0.0 + 0.0 == +0.0)
+        // Skip values which are NaN and canonicalize negative zero (-0.0 + 0.0
+        // == +0.0)
         if !self.x_shift.is_nan() {
             (self.x_shift + 0.0).to_bits().hash(state);
         }

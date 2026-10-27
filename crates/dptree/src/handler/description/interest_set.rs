@@ -61,8 +61,8 @@ impl<K: EventKind<S>, S> InterestSet<K, S> {
     /// });
     /// ```
     pub fn new_filter(filtered: HashSet<K, S>) -> Self {
-        // We assume that well behaved filters don't observe anything (filters should
-        // only filter!).
+        // We assume that well behaved filters don't observe anything (filters
+        // should only filter!).
         Self { observed: K::empty_set(), filtered }
     }
 }
@@ -78,11 +78,11 @@ where
     }
 
     fn user_defined() -> Self {
-        // We don't know what user defined code does, so we assume the most forgiving
-        // case: it observes everything and allows everything.
+        // We don't know what user defined code does, so we assume the most
+        // forgiving case: it observes everything and allows everything.
         //
-        // Were we to choose anything else, there would be user code that would be
-        // broken.
+        // Were we to choose anything else, there would be user code that would
+        // be broken.
         Self { observed: T::full_set(), filtered: T::full_set() }
     }
 
@@ -97,8 +97,8 @@ where
         let Self { observed: l_obs, filtered: l_flt } = self;
         let Self { observed: r_obs, filtered: r_flt } = other;
 
-        // Second handler can only observe things that were passed through by the first
-        // one.
+        // Second handler can only observe things that were passed through by
+        // the first one.
         let observed = {
             let hasher = l_obs.hasher().clone();
             let mut tmp = HashSet::with_hasher(hasher);
@@ -108,8 +108,8 @@ where
             tmp
         };
 
-        // If we chain two filters together, we are only passing through events that can
-        // pass both of them.
+        // If we chain two filters together, we are only passing through events
+        // that can pass both of them.
         let filtered = {
             let hasher = l_flt.hasher().clone();
             let mut tmp = HashSet::with_hasher(hasher);
@@ -125,8 +125,8 @@ where
         let Self { observed: l_obs, filtered: l_flt } = self;
         let Self { observed: r_obs, filtered: _ } = other;
 
-        // Second handler can only observe things that were passed through by the first
-        // one.
+        // Second handler can only observe things that were passed through by
+        // the first one.
         let observed = {
             let hasher = l_obs.hasher().clone();
             let mut tmp = HashSet::with_hasher(hasher);
@@ -136,8 +136,8 @@ where
             tmp
         };
 
-        // Even if second filter did not pass something through, the execution still
-        // continues.
+        // Even if second filter did not pass something through, the execution
+        // still continues.
         let filtered = l_flt.clone();
 
         Self { observed, filtered }

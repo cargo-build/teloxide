@@ -25,8 +25,8 @@ pub(crate) enum TelegramResponse<R> {
         #[serde(rename = "description")]
         error: ApiError,
 
-        // // This field is present in the json sent by telegram, but isn't currently used anywhere
-        // // and as such - ignored
+        // // This field is present in the json sent by telegram, but isn't
+        // currently used anywhere // and as such - ignored
         // error_code: u16,
         #[serde(rename = "parameters")]
         response_parameters: Option<ResponseParameters>,

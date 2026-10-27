@@ -100,8 +100,8 @@ pub trait AsUpdateStream<'a> {
     /// Error that can be returned from the [`Stream`]
     ///
     /// [`Stream`]: AsUpdateStream::Stream
-    // NB: This should be named differently to `UpdateListener::Err`, so that it's
-    // unambiguous
+    // NB: This should be named differently to `UpdateListener::Err`, so that
+    // it's unambiguous
     type StreamErr;
 
     /// The stream of updates from Telegram.

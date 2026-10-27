@@ -20,11 +20,15 @@ pub(crate) fn request_deadline(
     timeout: std::time::Duration,
     hint: Option<std::time::Duration>,
 ) -> cyper::Result<std::time::Instant> {
-    timeout.checked_add(hint.unwrap_or(std::time::Duration::ZERO))
+    timeout
+        .checked_add(hint.unwrap_or(std::time::Duration::ZERO))
         .and_then(|timeout| std::time::Instant::now().checked_add(timeout))
-        .ok_or_else(|| cyper::Error::System(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput, "request deadline exceeds the clock's range",
-        )))
+        .ok_or_else(|| {
+            cyper::Error::System(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "request deadline exceeds the clock's range",
+            ))
+        })
 }
 
 /// Constructs a network client from the `TELOXIDE_PROXY` environmental
@@ -54,7 +58,9 @@ pub fn client_from_env() -> cyper::Client {
     let builder = default_cyper_settings();
 
     match std::env::var(TELOXIDE_PROXY).ok() {
-        Some(proxy) => builder.proxy(Proxy::all(proxy).expect("cyper::proxy::Proxy creation failed")),
+        Some(proxy) => {
+            builder.proxy(Proxy::all(proxy).expect("cyper::proxy::Proxy creation failed"))
+        }
         None => builder,
     }
     .build()
@@ -62,7 +68,8 @@ pub fn client_from_env() -> cyper::Client {
 }
 
 /// Returns a native compio HTTP client builder. Configure framework deadlines
-/// with [`crate::Bot::set_request_timeout`]; long polls add their payload timeout.
+/// with [`crate::Bot::set_request_timeout`]; long polls add their payload
+/// timeout.
 pub fn default_cyper_settings() -> cyper::ClientBuilder {
     cyper::Client::builder()
 }

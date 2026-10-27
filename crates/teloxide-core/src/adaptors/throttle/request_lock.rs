@@ -1,11 +1,11 @@
 use std::pin::Pin;
 
+use async_channel as mpsc;
 use futures::{
+    channel::oneshot::{self, Receiver, Sender},
     task::{Context, Poll},
     Future,
 };
-use async_channel as mpsc;
-use futures::channel::oneshot::{self, Receiver, Sender};
 
 use crate::adaptors::throttle::FreezeUntil;
 

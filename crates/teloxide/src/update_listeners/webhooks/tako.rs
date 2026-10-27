@@ -36,7 +36,9 @@ where
             .expect("Couldn't bind to the webhook address");
         let server = CompioServer::builder().build().spawn_http(socket, router);
         let stopped = {
-            match futures::future::select(std::pin::pin!(stop), std::pin::pin!(server.result())).await {
+            match futures::future::select(std::pin::pin!(stop), std::pin::pin!(server.result()))
+                .await
+            {
                 Either::Left(_) => true,
                 Either::Right((result, _)) => {
                     token.stop();
@@ -74,7 +76,8 @@ where
 }
 
 /// Builds a listener, stop future and Tako router without contacting Telegram.
-/// Stopping closes the update queue and drains updates that were already accepted.
+/// Stopping closes the update queue and drains updates that were already
+/// accepted.
 pub fn tako_no_setup(
     options: Options,
 ) -> (impl UpdateListener<Err = Infallible>, impl Future<Output = ()>, Router) {
@@ -122,7 +125,8 @@ async fn telegram_request(state: Arc<WebhookState>, mut request: HttpRequest) ->
     if secret.is_some_and(|value| super::check_secret(value.as_bytes()).is_err()) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let authorized = secret.map(|value| value.as_bytes()) == state.secret.as_deref().map(str::as_bytes);
+    let authorized =
+        secret.map(|value| value.as_bytes()) == state.secret.as_deref().map(str::as_bytes);
     let body = match collect_body(&mut request).await {
         Ok(body) => body,
         Err(error) => return error.status().into_response(),
@@ -161,8 +165,11 @@ mod tests {
 
     #[compio::test]
     async fn webhook_routes_authenticates_and_drains_on_compio() {
-        let options = Options::new(([127, 0, 0, 1], 0).into(), "https://example.com/webhook".parse().unwrap())
-            .secret_token("known_secret".to_owned());
+        let options = Options::new(
+            ([127, 0, 0, 1], 0).into(),
+            "https://example.com/webhook".parse().unwrap(),
+        )
+        .secret_token("known_secret".to_owned());
         let (mut listener, stop, mut router) = tako_no_setup(options);
         router.get("/health", || async { "ready" });
         let socket = compio::net::TcpListener::bind(([127, 0, 0, 1], 0)).await.unwrap();
@@ -170,7 +177,18 @@ mod tests {
         let base = format!("http://{}", server.local_addr().unwrap());
         let client = cyper::Client::builder().no_proxy().build().unwrap();
 
-        assert_eq!(client.get(format!("{base}/health")).unwrap().send().await.unwrap().text().await.unwrap(), "ready");
+        assert_eq!(
+            client
+                .get(format!("{base}/health"))
+                .unwrap()
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap(),
+            "ready"
+        );
         for (secret, body, expected) in [
             (Some("known_secret"), UPDATE, StatusCode::OK),
             (Some("wrong_secret"), UPDATE, StatusCode::UNAUTHORIZED),
@@ -191,9 +209,16 @@ mod tests {
         assert_eq!(updates.next().await.unwrap().unwrap().id, UpdateId(7));
         assert!(updates.next().await.is_none());
         assert_eq!(
-            client.post(format!("{base}/webhook")).unwrap()
-                .header("x-telegram-bot-api-secret-token", "known_secret").unwrap()
-                .body(UPDATE).send().await.unwrap().status(),
+            client
+                .post(format!("{base}/webhook"))
+                .unwrap()
+                .header("x-telegram-bot-api-secret-token", "known_secret")
+                .unwrap()
+                .body(UPDATE)
+                .send()
+                .await
+                .unwrap()
+                .status(),
             StatusCode::SERVICE_UNAVAILABLE,
         );
         server.shutdown(Duration::from_secs(1)).await;
@@ -205,12 +230,22 @@ mod tests {
         let (_, flag) = mk_stop_token();
         let state = Arc::new(WebhookState { sender, flag, secret: None });
         let request = |body: Vec<u8>| HttpRequest::new(tako::body::TakoBody::from(body));
-        assert_eq!(telegram_request(state.clone(), request(vec![b'x'; 2 * 1024 * 1024 + 1])).await.status(), StatusCode::PAYLOAD_TOO_LARGE);
-        assert_eq!(telegram_request(state.clone(), request(vec![0xff])).await.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            telegram_request(state.clone(), request(vec![b'x'; 2 * 1024 * 1024 + 1]))
+                .await
+                .status(),
+            StatusCode::PAYLOAD_TOO_LARGE
+        );
+        assert_eq!(
+            telegram_request(state.clone(), request(vec![0xff])).await.status(),
+            StatusCode::BAD_REQUEST
+        );
         let raw = br#"{"update_id":8,"unknown_kind":{"future":true}}"#;
         assert_eq!(telegram_request(state, request(raw.to_vec())).await.status(), StatusCode::OK);
         let update = receiver.recv().await.unwrap();
         assert_eq!(update.id, UpdateId(8));
-        assert!(matches!(update.kind, UpdateKind::Error(value) if value["unknown_kind"]["future"] == true));
+        assert!(
+            matches!(update.kind, UpdateKind::Error(value) if value["unknown_kind"]["future"] == true)
+        );
     }
 }

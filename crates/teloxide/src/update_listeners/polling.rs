@@ -91,10 +91,7 @@ where
     /// reconnections caused by network errors.
     ///
     /// By default, the [`exponential_backoff_strategy`] is used.
-    pub fn backoff_strategy(
-        self,
-        backoff_strategy: impl 'static + Fn(u32) -> Duration,
-    ) -> Self {
+    pub fn backoff_strategy(self, backoff_strategy: impl 'static + Fn(u32) -> Duration) -> Self {
         Self { backoff_strategy: Box::new(backoff_strategy), ..self }
     }
 
@@ -335,8 +332,8 @@ impl<B: Requester> UpdateListener for Polling<B> {
     }
 
     fn hint_allowed_updates(&mut self, hint: &mut dyn Iterator<Item = AllowedUpdate>) {
-        // TODO: we should probably warn if there already were different allowed updates
-        // before
+        // TODO: we should probably warn if there already were different allowed
+        // updates before
         self.allowed_updates = Some(hint.collect());
     }
 }
@@ -352,8 +349,8 @@ impl<'a, B: Requester> AsUpdateStream<'a> for Polling<B> {
 
         let token_used_and_updated = self.reinit_stop_flag_if_needed();
 
-        // FIXME: document that `as_stream` is a destructive operation, actually,
-        //        and you need to call `stop_token` *again* after it
+        // FIXME: document that `as_stream` is a destructive operation,
+        // actually,        and you need to call `stop_token` *again* after it
         if token_used_and_updated {
             panic!(
                 "detected calling `as_stream` a second time after calling `stop_token`. \
@@ -423,7 +420,8 @@ impl<B: Requester> Stream for PollingStream<'_, B> {
                     return Ready(Some(Err(err)));
                 }
                 Ok(updates) => {
-                    // Once we got the update the backoff reconnection strategy worked
+                    // Once we got the update the backoff reconnection strategy
+                    // worked
                     *this.error_count = 0;
 
                     if let Some(upd) = updates.last() {
@@ -472,11 +470,12 @@ impl<B: Requester> Stream for PollingStream<'_, B> {
         let (offset, limit, timeout) = match (this.stopping, this.drop_pending_updates) {
             // Normal `get_updates()` call
             (false, false) => (*this.offset, this.polling.limit, *this.timeout),
-            // Graceful shutdown `get_updates()` call (shutdown takes priority over dropping pending
-            // updates)
+            // Graceful shutdown `get_updates()` call (shutdown takes priority
+            // over dropping pending updates)
             //
-            // When stopping we set `timeout = 0` and `limit = 1` so that `get_updates()`
-            // set last seen update (offset) and return immediately
+            // When stopping we set `timeout = 0` and `limit = 1` so that
+            // `get_updates()` set last seen update (offset) and return
+            // immediately
             (true, _) => {
                 log::trace!("graceful shutdown `get_updates` call");
                 (*this.offset, Some(1), Some(0))

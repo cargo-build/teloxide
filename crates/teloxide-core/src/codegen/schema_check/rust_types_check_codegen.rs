@@ -238,7 +238,8 @@ fn get_type(prop: &Value, initial_object_name: String) -> (bool, Kind) {
     } else if let Some(one_of) = prop.get("oneOf") {
         // If its oneOf, its probably an enum, probably of String
         if let Some(array) = one_of.as_array() {
-            // Just extract the type while checking, if all elements are of the same type
+            // Just extract the type while checking, if all elements are of the
+            // same type
             let mut all_variant_type = None;
             for variant in array {
                 let variant_type = get_type(variant, initial_object_name.clone()).1;
@@ -345,7 +346,8 @@ fn extract_fields_from_references_array(
     initial_object_name: String,
     most_fields_are_optional: bool,
     all_fields_are_optional: bool, // The difference between them is that if code detects that some
-    // field exists in all references, all_fields_are_optional will still make them optional
+    // field exists in all references, all_fields_are_optional will still make
+    // them optional
     exceptions: &Exceptions,
 ) -> Vec<Property> {
     let mut fields = vec![];
@@ -387,13 +389,14 @@ fn extract_fields_from_references_array(
 
     let fields_clone = fields.clone();
 
-    // If some field appears as much times are there are references, its in every
-    // single reference, and is required. Otherwise - make it optional.
+    // If some field appears as much times are there are references, its in
+    // every single reference, and is required. Otherwise - make it optional.
     for field in fields.iter_mut() {
         let fields_count = fields_clone
             .iter()
             .filter(|x| {
-                // The fields have to be required in the first place to retain it
+                // The fields have to be required in the first place to retain
+                // it
                 x.name == field.name && x.kind == field.kind && field.required && x.required
             })
             .count();
@@ -453,8 +456,8 @@ fn extract_fields_from_properties_object(
 
         // Here we flatten the types like ChatId and others
         if let Kind::Reference { ref reference } = kind {
-            // If its a reference that isnt in official types, its probably a wrapper for a
-            // type
+            // If its a reference that isnt in official types, its probably a
+            // wrapper for a type
             if !official_types.contains(reference)
                 // Some official types are still in need of being expanded, like InputFile
                 || exceptions.is_expand_reference(reference.to_owned())
@@ -594,8 +597,8 @@ fn check_struct_kind(
     object_name: String,
     errors: &mut Vec<ApiCheckError>,
 ) {
-    // Basic check so that if one field is Bool, but is supposed to be an Integer it
-    // is caught
+    // Basic check so that if one field is Bool, but is supposed to be an
+    // Integer it is caught
     if std::mem::discriminant(rust_kind) != std::mem::discriminant(api_kind) {
         errors.push(ApiCheckError::FieldTyDoesNotMatch {
             object: object_name,
@@ -625,8 +628,8 @@ fn check_struct_kind(
         Kind::String { default: _, min_len: _, max_len: _, enumeration: mut api_enum },
     ) = (rust_kind.clone(), api_kind.clone())
     {
-        // We check only if the existing enums are all good, if any one of these is
-        // empty then there's nothing to check
+        // We check only if the existing enums are all good, if any one of these
+        // is empty then there's nothing to check
         if !api_enum.is_empty() && !rust_enum.is_empty() {
             rust_enum.sort();
             api_enum.sort();
@@ -688,7 +691,8 @@ fn get_fields_of_api_object(api_schema: ApiSchema, api_object: Object) -> Vec<Pr
         ObjectData::AnyOf { any_of } => {
             let mut reference_fields_arrays = vec![];
 
-            // First, we convert an array of references into an array of their fields
+            // First, we convert an array of references into an array of their
+            // fields
             for value in any_of {
                 if let Kind::Reference { reference } = value.0 {
                     let reference_object =
@@ -707,8 +711,9 @@ fn get_fields_of_api_object(api_schema: ApiSchema, api_object: Object) -> Vec<Pr
             // Second, we check them and add them to `fields`
             for reference_fields_array in reference_fields_arrays.iter_mut() {
                 for reference_field in reference_fields_array.iter_mut() {
-                    // This basically checks if all references have the same field. If yes, it is
-                    // required. If not - set the required to false
+                    // This basically checks if all references have the same
+                    // field. If yes, it is required. If not - set the required
+                    // to false
                     if !(reference_fields_arrays_clone.iter().all(|x| {
                         x.iter().any(|y| {
                             y.name == reference_field.name
@@ -1016,7 +1021,8 @@ mod tests {
 
         // These are exceptions that apply to codegen
         let mut objects_exceptions = Exceptions::new(vec![
-            // Update has custom serialization, and it probably won't be wrong any time soon
+            // Update has custom serialization, and it probably won't be wrong
+            // any time soon
             Exception::RemoveObjectFromChecking { object: "Update".to_owned() },
             // They are in a single struct
             Exception::RemoveObjectFromChecking { object: "MessageOriginUser".to_owned() },
@@ -1066,8 +1072,8 @@ mod tests {
                 object: "TransactionPartnerTelegramAds".to_owned(),
             },
             Exception::RemoveObjectFromChecking { object: "TransactionPartnerOther".to_owned() },
-            // They are checked with PassportElementError, and they don't have a `message` field,
-            // which PassportElementError has
+            // They are checked with PassportElementError, and they don't have a
+            // `message` field, which PassportElementError has
             Exception::RemoveObjectFromChecking {
                 object: "PassportElementErrorDataField".to_owned(),
             },
