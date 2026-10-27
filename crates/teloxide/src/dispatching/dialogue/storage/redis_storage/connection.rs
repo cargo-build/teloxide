@@ -60,7 +60,8 @@ impl Pool {
             Some(connection) => connection,
             None => Connection::connect(&self.info).await?,
         };
-        // A cancelled or failed exchange owns and drops its socket before releasing the permit.
+        // A cancelled or failed exchange owns and drops its socket before
+        // releasing the permit.
         let value = connection.command(command).await?;
         self.idle.borrow_mut().push_back(connection);
         T::from_owned_redis_value(value)

@@ -256,10 +256,10 @@ impl Read {
                 match inner.complete.into_inner() {
                     Some(result) => buffered_body(result),
                     None => {
-                    let ReadBuffer { reader, chunks } = inner.buffer.into_inner();
-                    let stream = stream::iter(chunks.into_iter().map(Ok))
-                        .chain(reader)
-                        .map_err(cyper::Error::System);
+                        let ReadBuffer { reader, chunks } = inner.buffer.into_inner();
+                        let stream = stream::iter(chunks.into_iter().map(Ok))
+                            .chain(reader)
+                            .map_err(cyper::Error::System);
                         // Cyper's Hyper body requires Send; InputFile and Bot
                         // remain local.
                         Body::stream(send_wrapper::SendWrapper::new(stream))

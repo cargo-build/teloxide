@@ -1,10 +1,12 @@
 // Adapted from sqlx-postgres 0.8.6 under MIT; see LICENSE-SQLX.
 
-use std::borrow::Cow;
-use std::env::var_os;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::{
+    borrow::Cow,
+    env::var_os,
+    fs::File,
+    io::{BufRead, BufReader},
+    path::PathBuf,
+};
 
 /// Looks up an optional password using the established SQLx passfile rules.
 pub(crate) fn load_password(

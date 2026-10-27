@@ -1,6 +1,9 @@
 use std::{
     io::Cursor,
-    sync::{atomic::{AtomicUsize, Ordering}, Arc, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 
@@ -10,8 +13,8 @@ use compio::{
 };
 use futures::TryStreamExt;
 use tako::{
-    extractors::body::collect_body, router::Router, types::Request as HttpRequest, CompioServer, Method,
-    StatusCode,
+    extractors::body::collect_body, router::Router, types::Request as HttpRequest, CompioServer,
+    Method, StatusCode,
 };
 use teloxide_core::{net::Download, prelude::*, types::InputFile, DownloadError};
 
@@ -147,8 +150,13 @@ async fn bot_json_multipart_and_downloads_use_compio_io() {
     #[cfg(feature = "throttle")]
     {
         let throttled = bot.clone().throttle(teloxide_core::adaptors::throttle::Limits::default());
-        let message = compio::time::timeout(Duration::from_secs(3), throttled.send_message(ChatId(1), "queued").send())
-            .await.unwrap().unwrap();
+        let message = compio::time::timeout(
+            Duration::from_secs(3),
+            throttled.send_message(ChatId(1), "queued").send(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         assert_eq!(message.id.0, 5);
         assert_eq!(message_attempts.load(Ordering::Relaxed), 2);
     }
@@ -162,10 +170,12 @@ fn tokio_runtime_is_absent() -> bool {
 
 async fn server_delay() {
     let (finished, wait) = futures::channel::oneshot::channel();
-    // Tako requires a Send handler future; the timer stays in its local compio task.
+    // Tako requires a Send handler future; the timer stays in its local compio
+    // task.
     compio::runtime::spawn(async move {
         compio::time::sleep(Duration::from_millis(30)).await;
         let _ = finished.send(());
-    }).detach();
+    })
+    .detach();
     wait.await.unwrap();
 }

@@ -110,13 +110,15 @@ pub(crate) fn parse_config(database_url: &str) -> io::Result<(Config, TlsSetting
     options.extend(endpoint);
     let mut url = url::Url::parse("postgres:///").map_err(io::Error::other)?;
     url.query_pairs_mut().extend_pairs(options);
-    // libpq percent-decodes query values without form encoding's '+' space rule.
+    // libpq percent-decodes query values without form encoding's '+' space
+    // rule.
     let encoded = url.as_str().replace('+', "%20");
     let mut config: Config = encoded.parse().map_err(io::Error::other)?;
     if config.get_channel_binding() == ChannelBinding::Require {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "channel_binding=require is unavailable: this adapter does not provide peer certificate bindings",
+            "channel_binding=require is unavailable: this adapter does not provide peer \
+             certificate bindings",
         ));
     }
     apply_environment(&mut config)?;
@@ -273,7 +275,12 @@ mod tests {
 
     #[test]
     fn url_aliases_preserve_tls_and_startup_options() {
-        let (config, tls, capacity) = parse_config("postgres://user:p%2B%20ass@localhost/database?sslmode=verify-full&ssl-ca=root.pem&options[search_path]=public&options=-c%20statement_timeout=10&statement-cache-capacity=4").unwrap();
+        let (config, tls, capacity) = parse_config(
+            "postgres://user:p%2B%20ass@localhost/database?sslmode=verify-full&ssl-ca=root.pem&\
+             options[search_path]=public&options=-c%20statement_timeout=10&\
+             statement-cache-capacity=4",
+        )
+        .unwrap();
         assert_eq!(tls.verification, Verification::Full);
         assert!(
             matches!(tls.root, Some(CertificateInput::Path(path)) if path == Path::new("root.pem"))
@@ -299,7 +306,11 @@ mod tests {
 
     #[test]
     fn query_endpoint_fields_override_uri_fields() {
-        let (config, _, _) = parse_config("postgres://old:old@old-host:5432/old?host=localhost&port=55439&user=new&password=new&dbname=new").unwrap();
+        let (config, _, _) = parse_config(
+            "postgres://old:old@old-host:5432/old?host=localhost&port=55439&user=new&password=new&\
+             dbname=new",
+        )
+        .unwrap();
         assert_eq!(config.get_hosts(), &[Host::Tcp("localhost".to_owned())]);
         assert_eq!(config.get_ports(), &[55439]);
         assert_eq!(config.get_user(), Some("new"));
