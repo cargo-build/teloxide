@@ -513,7 +513,7 @@ mod tests {
                         .unwrap_or_else(|| {
                             panic!(
                                 "{}",
-                                format!("Sibling method of {} does not exist", &method.name)
+                                format!("Sibling method of {} does not exist", method.name)
                             )
                         });
 

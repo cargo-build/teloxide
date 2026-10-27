@@ -334,6 +334,7 @@ impl<R, Err, Key> Dispatcher<R, Err, Key>
 where
     R: Clone + Requester + 'static,
     Err: 'static,
+    Key: Hash + Eq + Clone,
 {
     /// Starts your bot with the default parameters.
     ///
@@ -772,7 +773,7 @@ mod tests {
         }
     }
 
-    fn make_update(chat_id: i64, update_id: i64, text: String) -> Update {
+    fn make_update(chat_id: i64, update_id: u32, text: String) -> Update {
         let date = DateTime::from_timestamp(1_569_518_829, 0).unwrap();
         Update {
             id: UpdateId(update_id),
@@ -861,7 +862,7 @@ mod tests {
 
         // The handler state is deliberately non-`Send` (`Rc`): the dispatcher
         // must accept local handlers.
-        let processed = Rc::new(RefCell::new(Vec::<(ChatId, i64)>::new()));
+        let processed = Rc::new(RefCell::new(Vec::<(ChatId, u32)>::new()));
         let started = Rc::new(Cell::new(0usize));
 
         let state = ShutdownToken::new();
@@ -929,7 +930,7 @@ mod tests {
         assert_eq!(processed.len(), total, "drain on stop must process queued updates");
 
         for chat in [chat_a, chat_b] {
-            let ids: Vec<i64> =
+            let ids: Vec<u32> =
                 processed.iter().filter(|(c, _)| *c == chat).map(|(_, id)| *id).collect();
             assert_eq!(ids.len(), 3, "each chat must see all of its updates");
             assert!(

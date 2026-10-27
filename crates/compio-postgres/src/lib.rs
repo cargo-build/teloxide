@@ -1,8 +1,7 @@
 //! PostgreSQL protocol sessions driven exclusively by compio sockets and tasks.
 //!
-//! Dropping an unfinished lease closes its session. Call [`Lease::recycle`]
-//! only after the complete result has been consumed to return a session to the
-//! pool.
+//! Dropping an unfinished lease closes its session. Call [`Lease::recycle`] only
+//! after the complete result has been consumed to return a session to the pool.
 
 #[cfg(any(feature = "native-tls", feature = "rustls"))]
 mod tls;
@@ -56,12 +55,10 @@ pub struct Lease<'a> {
 }
 
 impl Pool {
-    /// Resolves URL, environment and passfile options without opening a
-    /// session.
+    /// Resolves URL, environment and passfile options without opening a session.
     ///
     /// # Errors
-    /// Returns an error for malformed URLs, TLS options or mismatched
-    /// credentials.
+    /// Returns an error for malformed URLs, TLS options or mismatched credentials.
     pub fn new(database_url: &str, max_connections: NonZeroU32) -> io::Result<Self> {
         let (config, tls, statement_cache_capacity) = parse_config(database_url)?;
         #[cfg(not(any(feature = "native-tls", feature = "rustls")))]
@@ -84,12 +81,10 @@ impl Pool {
         })
     }
 
-    /// Acquires a session within 30 seconds, including waiting and connection
-    /// setup.
+    /// Acquires a session within 30 seconds, including waiting and connection setup.
     ///
     /// # Errors
-    /// Returns connection, authentication or TLS errors without retrying
-    /// queries.
+    /// Returns connection, authentication or TLS errors without retrying queries.
     ///
     /// # Panics
     /// Panics if no compio runtime is active when a session is established.
@@ -231,7 +226,11 @@ impl Pool {
         S::ReadHalf: AsyncRead + Unpin,
         S::WriteHalf: AsyncWrite + Unpin,
     {
-        let stream = Box::pin(AsyncStream::new(stream)).compat();
+        let stream = ProtocolStream {
+            inner: Box::pin(AsyncStream::new(stream)).compat(),
+            #[cfg(feature = "native-tls")]
+            native_handshake: false,
+        };
         if plaintext || self.config.get_ssl_mode() == SslMode::Disable {
             let mut config = self.config.clone();
             config.ssl_mode(SslMode::Disable);
@@ -330,6 +329,65 @@ where
     Connection { client, _driver: driver, statements: RefCell::new(VecDeque::new()) }
 }
 
+struct ProtocolStream<S>
+where
+    S: Splittable,
+{
+    inner: tokio_util::compat::Compat<std::pin::Pin<Box<AsyncStream<S>>>>,
+    #[cfg(feature = "native-tls")]
+    native_handshake: bool,
+}
+
+impl<S> tokio::io::AsyncRead for ProtocolStream<S>
+where
+    S: Splittable + 'static,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
+{
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        let inner = &mut self.get_mut().inner;
+        // SSLRequest and TLS handshakes read immediately after their buffered writes.
+        std::task::ready!(tokio::io::AsyncWrite::poll_flush(std::pin::Pin::new(&mut *inner), cx))?;
+        tokio::io::AsyncRead::poll_read(std::pin::Pin::new(inner), cx, buf)
+    }
+}
+
+impl<S> tokio::io::AsyncWrite for ProtocolStream<S>
+where
+    S: Splittable + 'static,
+    S::ReadHalf: AsyncRead + Unpin,
+    S::WriteHalf: AsyncWrite + Unpin,
+{
+    fn poll_write(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<io::Result<usize>> {
+        tokio::io::AsyncWrite::poll_write(std::pin::Pin::new(&mut self.get_mut().inner), cx, buf)
+    }
+    fn poll_flush(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        // OpenSSL's handshake BIO flush cannot suspend; its next read flushes the buffer.
+        #[cfg(feature = "native-tls")]
+        if self.native_handshake {
+            return std::task::Poll::Ready(Ok(()));
+        }
+        tokio::io::AsyncWrite::poll_flush(std::pin::Pin::new(&mut self.get_mut().inner), cx)
+    }
+    fn poll_shutdown(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        tokio::io::AsyncWrite::poll_shutdown(std::pin::Pin::new(&mut self.get_mut().inner), cx)
+    }
+}
+
 #[cfg(any(feature = "native-tls", feature = "rustls"))]
 struct TlsConnector {
     connector: tls::Connector,
@@ -342,21 +400,13 @@ where
     S: Splittable,
 {
     #[cfg(feature = "native-tls")]
-    Native(
-        tokio_native_tls::TlsStream<tokio_util::compat::Compat<std::pin::Pin<Box<AsyncStream<S>>>>>,
-    ),
+    Native(tokio_native_tls::TlsStream<ProtocolStream<S>>),
     #[cfg(all(feature = "rustls", not(feature = "native-tls")))]
-    Rustls(
-        tokio_rustls::client::TlsStream<
-            tokio_util::compat::Compat<std::pin::Pin<Box<AsyncStream<S>>>>,
-        >,
-    ),
+    Rustls(tokio_rustls::client::TlsStream<ProtocolStream<S>>),
 }
 
 #[cfg(any(feature = "native-tls", feature = "rustls"))]
-impl<S>
-    tokio_postgres::tls::TlsConnect<tokio_util::compat::Compat<std::pin::Pin<Box<AsyncStream<S>>>>>
-    for TlsConnector
+impl<S> tokio_postgres::tls::TlsConnect<ProtocolStream<S>> for TlsConnector
 where
     S: Splittable + 'static,
     S::ReadHalf: AsyncRead + Unpin,
@@ -366,18 +416,19 @@ where
     type Error = io::Error;
     type Future = futures::future::LocalBoxFuture<'static, io::Result<Self::Stream>>;
 
-    fn connect(
-        self,
-        stream: tokio_util::compat::Compat<std::pin::Pin<Box<AsyncStream<S>>>>,
-    ) -> Self::Future {
+    fn connect(self, stream: ProtocolStream<S>) -> Self::Future {
         Box::pin(async move {
             match self.connector {
                 #[cfg(feature = "native-tls")]
-                tls::Connector::Native(connector) => connector
-                    .connect(&self.domain, stream)
-                    .await
-                    .map(TlsStream::Native)
-                    .map_err(io::Error::other),
+                tls::Connector::Native(connector) => {
+                    let mut stream = stream;
+                    stream.native_handshake = true;
+                    let mut stream =
+                        connector.connect(&self.domain, stream).await.map_err(io::Error::other)?;
+                    stream.get_mut().get_mut().get_mut().native_handshake = false;
+                    tokio::io::AsyncWriteExt::flush(&mut stream).await?;
+                    Ok(TlsStream::Native(stream))
+                }
                 #[cfg(all(feature = "rustls", not(feature = "native-tls")))]
                 tls::Connector::Rustls(connector) => {
                     let domain = self.domain.try_into().map_err(io::Error::other)?;
@@ -584,6 +635,7 @@ mod tests {
         url.set_query(None);
         url.set_host(Some("localhost")).unwrap();
         url.query_pairs_mut()
+            .append_pair("hostaddr", "127.0.0.1")
             .append_pair("sslmode", "verify-full")
             .append_pair("sslrootcert", &root);
         let pool = Pool::new(url.as_str(), NonZeroU32::MIN).unwrap();
@@ -607,10 +659,15 @@ mod tests {
         let pool = Pool::new(url.as_str(), NonZeroU32::MIN).unwrap();
         pool.get().await.unwrap();
 
-        url.set_query(Some("sslmode=verify-full"));
+        url.set_host(Some("localhost")).unwrap();
+        url.set_query(None);
+        url.query_pairs_mut()
+            .append_pair("hostaddr", "127.0.0.1")
+            .append_pair("sslmode", "verify-full");
         let pool = Pool::new(url.as_str(), NonZeroU32::MIN).unwrap();
         assert!(pool.get().await.is_err(), "verify-full must reject an untrusted certificate");
 
+        url.set_host(Some("127.0.0.1")).unwrap();
         for (mode, encrypted) in
             [("allow", false), ("disable", false), ("prefer", true), ("require", true)]
         {

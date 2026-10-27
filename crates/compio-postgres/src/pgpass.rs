@@ -1,12 +1,10 @@
 // Adapted from sqlx-postgres 0.8.6 under MIT; see LICENSE-SQLX.
 
-use std::{
-    borrow::Cow,
-    env::var_os,
-    fs::File,
-    io::{BufRead, BufReader},
-    path::PathBuf,
-};
+use std::borrow::Cow;
+use std::env::var_os;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::path::PathBuf;
 
 /// Looks up an optional password using the established SQLx passfile rules.
 pub(crate) fn load_password(
@@ -16,12 +14,11 @@ pub(crate) fn load_password(
     database: Option<&str>,
 ) -> Option<String> {
     let custom_file = var_os("PGPASSFILE");
-    if let Some(file) = custom_file {
-        if let Some(password) =
+    if let Some(file) = custom_file
+        && let Some(password) =
             load_password_from_file(PathBuf::from(file), host, port, username, database)
-        {
-            return Some(password);
-        }
+    {
+        return Some(password);
     }
 
     #[cfg(not(target_os = "windows"))]
@@ -116,10 +113,8 @@ fn load_password_from_line(
         _ => {
             matches_next_field(&mut line, host)?;
             matches_next_field(&mut line, &port.to_string())?;
-            let database = match database {
-                Some(database) => database,
-                None => "",
-            };
+            // An absent database retains SQLx's optional passfile matcher.
+            let database = database.unwrap_or_default();
             matches_next_field(&mut line, database)?;
             matches_next_field(&mut line, username)?;
             Some(line.to_owned())

@@ -33,7 +33,7 @@ async fn polling_backs_off_retains_offsets_and_acknowledges_stop() {
             }
         }
     });
-    let socket = compio::net::TcpListener::bind(([127, 0, 0, 1], 0)).await.unwrap();
+    let socket = compio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     let server = CompioServer::builder().build().spawn_http(socket, router);
     let client = cyper::Client::builder().no_proxy().build().unwrap();
     let bot = Bot::with_client("123:local", client)
@@ -54,15 +54,16 @@ async fn polling_backs_off_retains_offsets_and_acknowledges_stop() {
     assert_eq!(updates.next().await.unwrap().unwrap().id.0, 8);
     stop.stop();
     assert!(updates.next().await.is_none());
-    let requests = requests.lock().unwrap();
-    assert_eq!(requests.len(), 3);
-    assert_eq!(requests[0]["allowed_updates"], serde_json::json!(["message"]));
-    assert_eq!(requests[0]["offset"], 0);
-    assert_eq!(requests[1]["offset"], 0);
-    assert_eq!(requests[1]["timeout"], 3);
-    assert_eq!(requests[2]["offset"], 9);
-    assert_eq!(requests[2]["limit"], 1);
-    assert_eq!(requests[2]["timeout"], 0);
-    drop(requests);
+    {
+        let requests = requests.lock().unwrap();
+        assert_eq!(requests.len(), 3);
+        assert_eq!(requests[0]["allowed_updates"], serde_json::json!(["message"]));
+        assert_eq!(requests[0]["offset"], 0);
+        assert_eq!(requests[1]["offset"], 0);
+        assert_eq!(requests[1]["timeout"], 3);
+        assert_eq!(requests[2]["offset"], 9);
+        assert_eq!(requests[2]["limit"], 1);
+        assert_eq!(requests[2]["timeout"], 0);
+    }
     server.shutdown(Duration::from_secs(1)).await;
 }

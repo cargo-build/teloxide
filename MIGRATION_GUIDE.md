@@ -9,7 +9,7 @@ This fork requires Rust 1.99+ and runs on compio. Use `compio = { version = "0.1
 
 Bot API requests use Cyper. `Bot::with_client`, `Bot::client` and network errors expose Cyper types; URLs use `url::Url`. `net::default_cyper_settings` replaces `default_reqwest_settings`. Request execution defaults to a 17-second deadline plus the payload's long-poll timeout. Use `Bot::set_request_timeout(Duration)` to tune requests and remote downloads; Cyper has no separate connection-timeout or TCP_NODELAY builder setting. Download HTTP rejection remains typed as `HttpStatus` when propagated into `RequestError`.
 
-Requests and handler futures no longer require `Send`. Bot clients, input readers and injected dependencies may be thread-affine; create and use them on the same compio executor thread. The adapted workspace dptree uses `Rc` for dependency ownership and local futures, retaining composition and dependency diagnostics. A task returned by `compio::runtime::spawn` is canceled when its handle is dropped: retain/await it, or call `.detach()` when the task intentionally outlives the handle.
+Requests and handler futures no longer require `Send`. Bot clients, input readers and injected dependencies may be thread-affine; create and use them on the same compio executor thread. The adapted workspace dptree uses `Rc` for dependency ownership and local futures, retaining composition and dependency diagnostics. Import `teloxide::dptree` instead of a separate registry dptree dependency so handler and dependency types share the same adapted crate. A task returned by `compio::runtime::spawn` is canceled when its handle is dropped: retain/await it, or call `.detach()` when the task intentionally outlives the handle.
 
 Uploads accept `compio::io::AsyncRead`; downloads accept a generic `compio::io::AsyncWrite` destination and return local futures/streams. File handles use positional I/O, so wrap them in `std::io::Cursor` for sequential reads/writes:
 
@@ -19,10 +19,9 @@ let mut output = std::io::Cursor::new(compio::fs::File::create("output.png").awa
 bot.download_file(&file.path, &mut output).await?;
 ```
 
-
 Dropping the dispatcher cancels the worker tasks it owns. For graceful draining, request shutdown and await dispatch completion. Cancelling dispatch during its drain also drops and cancels the worker handles being awaited.
 
-Enable `webhooks-tako` and use `webhooks::tako`, `tako_to_router` or `tako_no_setup`. Compose the returned Tako router with a `tako::CompioServer`; the stop future deletes the registered webhook. Use compio signal handling, since Tako's convenience `shutdown_signal` helper can create a Tokio runtime. Accepted queued updates drain on stop; subsequent webhook requests receive 503. Invalid secret syntax receives 400, a mismatched secret 401, oversized bodies 413, and malformed JSON is logged and acknowledged with 200 to prevent permanent retries.
+Enable `webhooks-tako` and use `webhooks::tako`, `tako_to_router` or `tako_no_setup`. Compose the returned Tako router with a `tako::CompioServer`; the stop future deletes the registered webhook. Use compio signal handling, since Tako's convenience `shutdown_signal` helper can create a Tokio runtime. Tako 2.5 router handlers still require Send futures; keep Bot work in local dispatcher/tasks and pass channel data through HTTP routes. Accepted queued updates drain on stop; subsequent webhook requests receive 503. Invalid secret syntax receives 400, a mismatched secret 401, oversized bodies 413, and malformed JSON is logged and acknowledged with 200 to prevent permanent retries.
 
 Use `sqlite-storage`, `postgres-storage` and `redis-storage`. The former TLS-suffixed storage features are removed; PostgreSQL TLS follows `native-tls`/`rustls`. Existing `teloxide_dialogues` tables, Redis chat ID keys and serializer bytes remain compatible. Driver error types change with the storage implementation. SQLite engine operations run on compio's blocking pool. PostgreSQL and Redis sockets run on compio; linking protocol I/O traits does not start a Tokio executor.
 

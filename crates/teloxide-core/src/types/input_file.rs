@@ -256,7 +256,10 @@ impl Read {
                 match inner.complete.into_inner() {
                     Some(result) => buffered_body(result),
                     None => {
-                        let stream = inner.buffer.into_inner().reader.map_err(cyper::Error::System);
+                    let ReadBuffer { reader, chunks } = inner.buffer.into_inner();
+                    let stream = stream::iter(chunks.into_iter().map(Ok))
+                        .chain(reader)
+                        .map_err(cyper::Error::System);
                         // Cyper's Hyper body requires Send; InputFile and Bot
                         // remain local.
                         Body::stream(send_wrapper::SendWrapper::new(stream))
@@ -288,6 +291,49 @@ fn buffered_body(result: Result<Vec<Bytes>, Arc<io::Error>>) -> Body {
     match result {
         Ok(chunks) => Body::stream(stream::iter(chunks.into_iter().map(Ok))),
         Err(err) => Body::stream(stream::iter([Err(cyper::Error::System(io::Error::other(err)))])),
+    }
+}
+
+/// An internal trait that is used in expansion of `impl_payload!` used to work
+/// with input-file-like things (`InputFile` itself, `Option<InputFile>`,
+/// `InputSticker`)
+pub(crate) trait InputFileLike {
+    fn copy_into(&self, into: &mut dyn FnMut(InputFile));
+
+    fn move_into(&mut self, into: &mut dyn FnMut(InputFile));
+}
+
+impl InputFileLike for InputFile {
+    fn copy_into(&self, into: &mut dyn FnMut(InputFile)) {
+        into(self.clone())
+    }
+
+    fn move_into(&mut self, into: &mut dyn FnMut(InputFile)) {
+        into(self.take())
+    }
+}
+
+impl InputFileLike for Option<InputFile> {
+    fn copy_into(&self, into: &mut dyn FnMut(InputFile)) {
+        if let Some(this) = self {
+            this.copy_into(into)
+        }
+    }
+
+    fn move_into(&mut self, into: &mut dyn FnMut(InputFile)) {
+        if let Some(this) = self {
+            this.move_into(into)
+        }
+    }
+}
+
+impl InputFileLike for InputSticker {
+    fn copy_into(&self, into: &mut dyn FnMut(InputFile)) {
+        self.sticker.copy_into(into)
+    }
+
+    fn move_into(&mut self, into: &mut dyn FnMut(InputFile)) {
+        self.sticker.move_into(into)
     }
 }
 
@@ -369,48 +415,5 @@ mod tests {
                 .windows(b"replayed upload bytes".len())
                 .any(|chunk| chunk == b"replayed upload bytes"));
         }
-    }
-}
-
-/// An internal trait that is used in expansion of `impl_payload!` used to work
-/// with input-file-like things (`InputFile` itself, `Option<InputFile>`,
-/// `InputSticker`)
-pub(crate) trait InputFileLike {
-    fn copy_into(&self, into: &mut dyn FnMut(InputFile));
-
-    fn move_into(&mut self, into: &mut dyn FnMut(InputFile));
-}
-
-impl InputFileLike for InputFile {
-    fn copy_into(&self, into: &mut dyn FnMut(InputFile)) {
-        into(self.clone())
-    }
-
-    fn move_into(&mut self, into: &mut dyn FnMut(InputFile)) {
-        into(self.take())
-    }
-}
-
-impl InputFileLike for Option<InputFile> {
-    fn copy_into(&self, into: &mut dyn FnMut(InputFile)) {
-        if let Some(this) = self {
-            this.copy_into(into)
-        }
-    }
-
-    fn move_into(&mut self, into: &mut dyn FnMut(InputFile)) {
-        if let Some(this) = self {
-            this.move_into(into)
-        }
-    }
-}
-
-impl InputFileLike for InputSticker {
-    fn copy_into(&self, into: &mut dyn FnMut(InputFile)) {
-        self.sticker.copy_into(into)
-    }
-
-    fn move_into(&mut self, into: &mut dyn FnMut(InputFile)) {
-        self.sticker.move_into(into)
     }
 }

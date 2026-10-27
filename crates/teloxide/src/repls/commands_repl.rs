@@ -70,7 +70,6 @@ pub trait CommandReplExt {
     /// A REPL for commands.
     ///
     /// See [`CommandReplExt`] for more details.
-    #[must_use]
     fn repl<'a, R, H, Args>(bot: R, handler: H) -> LocalBoxFuture<'a, ()>
     where
         R: Requester + Clone + 'static,
@@ -79,7 +78,6 @@ pub trait CommandReplExt {
     /// A REPL for commands with a custom [`UpdateListener`].
     ///
     /// See [`CommandReplExt`] for more details.
-    #[must_use]
     fn repl_with_listener<'a, R, H, L, Args>(
         bot: R,
         handler: H,

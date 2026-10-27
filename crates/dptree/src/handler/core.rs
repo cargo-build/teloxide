@@ -622,13 +622,7 @@ pub fn type_check(sig: &HandlerSignature, container: &DependencyMap, assumptions
                         missing_types_msg.red().bold().to_string()
                     },
                     print_types(
-                        obligations.iter().filter_map(|(ty, _location)| {
-                            if !container_types.contains(ty) {
-                                Some(ty)
-                            } else {
-                                None
-                            }
-                        }),
+                        obligations.keys().filter(|&ty| !container_types.contains(ty)),
                         |ty| { format!("`{}` from {}", ty.name, obligations[ty]) },
                     ),
                     note_msg,

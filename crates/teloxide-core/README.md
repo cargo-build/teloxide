@@ -2,8 +2,8 @@
   <img src="../../media/teloxide-core-logo.svg" width="250"/>
 
   <h1>teloxide-core</h1>
-  <a href="https://github.com/teloxide/teloxide-core/actions">
-    <img src="https://github.com/teloxide/teloxide-core/workflows/Continuous%20integration/badge.svg">
+  <a href="https://github.com/cargo-build/teloxide/actions">
+    <img src="https://github.com/cargo-build/teloxide/workflows/Continuous%20integration/badge.svg">
   </a>
   <a href="https://docs.rs/teloxide_core/">
     <img src="https://docs.rs/teloxide-core/badge.svg">

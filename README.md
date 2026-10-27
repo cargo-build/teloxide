@@ -4,8 +4,8 @@
   <a href="https://docs.rs/teloxide/">
     <img src="https://docs.rs/teloxide/badge.svg">
   </a>
-  <a href="https://github.com/teloxide/teloxide/actions">
-    <img src="https://github.com/teloxide/teloxide/workflows/Continuous%20integration/badge.svg">
+  <a href="https://github.com/cargo-build/teloxide/actions">
+    <img src="https://github.com/cargo-build/teloxide/workflows/Continuous%20integration/badge.svg">
   </a>
   <a href="https://crates.io/crates/teloxide">
     <img src="https://img.shields.io/crates/v/teloxide.svg">
@@ -16,7 +16,7 @@
   <a href="https://t.me/teloxide">
     <img src="https://img.shields.io/badge/support-t.me%2Fteloxide-blueviolet">
   </a>
-  <a href="https://devpod.sh/open#https://github.com/teloxide/teloxide">
+  <a href="https://devpod.sh/open#https://github.com/cargo-build/teloxide">
     <img src="https://img.shields.io/badge/Open_in-DevPod-blueviolet">
   </a>
 

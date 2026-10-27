@@ -172,7 +172,7 @@ mod tests {
         .secret_token("known_secret".to_owned());
         let (mut listener, stop, mut router) = tako_no_setup(options);
         router.get("/health", || async { "ready" });
-        let socket = compio::net::TcpListener::bind(([127, 0, 0, 1], 0)).await.unwrap();
+        let socket = compio::net::TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let server = CompioServer::builder().build().spawn_http(socket, router);
         let base = format!("http://{}", server.local_addr().unwrap());
         let client = cyper::Client::builder().no_proxy().build().unwrap();
@@ -205,7 +205,7 @@ mod tests {
 
         listener.stop_token().stop();
         stop.await;
-        let mut updates = listener.as_stream();
+        let mut updates = std::pin::pin!(listener.as_stream());
         assert_eq!(updates.next().await.unwrap().unwrap().id, UpdateId(7));
         assert!(updates.next().await.is_none());
         assert_eq!(

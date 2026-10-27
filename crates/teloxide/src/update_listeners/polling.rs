@@ -322,7 +322,7 @@ pub struct PollingStream<'a, B: Requester> {
     error_count: u32,
 }
 
-impl<B: Requester> UpdateListener for Polling<B> {
+impl<B: Requester + 'static> UpdateListener for Polling<B> {
     type Err = B::Err;
 
     fn stop_token(&mut self) -> StopToken {
@@ -338,7 +338,7 @@ impl<B: Requester> UpdateListener for Polling<B> {
     }
 }
 
-impl<'a, B: Requester> AsUpdateStream<'a> for Polling<B> {
+impl<'a, B: Requester + 'a> AsUpdateStream<'a> for Polling<B> {
     type StreamErr = B::Err;
     type Stream = PollingStream<'a, B>;
 

@@ -6,6 +6,13 @@ runtime feature disabled. Tokio I/O traits and codecs adapt the protocol to
 compio; no Tokio reactor or executor is created. Poll-based TLS adapters keep
 the same pinned compio socket throughout PostgreSQL SSL negotiation.
 
+Use the workspace package directly from the owned fork:
+
+```toml
+compio = { version = "0.19.2", features = ["macros"] }
+compio-postgres = { git = "https://github.com/cargo-build/teloxide" }
+```
+
 ```rust,no_run
 use std::num::NonZeroU32;
 use compio_postgres::Pool;
@@ -51,6 +58,10 @@ requiring TLS returns an error. Unix socket connections do not use TLS.
 `channel_binding=require` returns an explicit unsupported-configuration error.
 The adapter does not currently provide peer certificate bindings; `prefer` and `disable`
 use plain SCRAM authentication, matching the previous SQLx backend.
+
+Hostnames use compio's sequential address attempts within the acquisition
+deadline. `hostaddr` can select a transport IP while `host` supplies the TLS
+verification name.
 
 A compio runtime must be running when acquiring or using sessions. Futures and
 pools may contain local resources and do not require `Send` or `Sync`.

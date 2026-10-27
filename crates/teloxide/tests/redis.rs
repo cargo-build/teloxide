@@ -11,7 +11,9 @@ use teloxide::{
 async fn test_redis_json_protocol_fixture() {
     let (storage, server) =
         protocol_fixture(teloxide::dispatching::dialogue::serializer::Json).await;
-    test_redis(storage).await;
+    compio::time::timeout(std::time::Duration::from_secs(5), test_redis(storage))
+        .await
+        .expect("scripted Redis dialogue exchange must finish");
     server.await.unwrap();
 }
 
@@ -19,7 +21,9 @@ async fn test_redis_json_protocol_fixture() {
 async fn test_redis_bincode_protocol_fixture() {
     let (storage, server) =
         protocol_fixture(teloxide::dispatching::dialogue::serializer::Bincode).await;
-    test_redis(storage).await;
+    compio::time::timeout(std::time::Duration::from_secs(5), test_redis(storage))
+        .await
+        .expect("scripted Redis dialogue exchange must finish");
     server.await.unwrap();
 }
 
@@ -27,7 +31,9 @@ async fn test_redis_bincode_protocol_fixture() {
 async fn test_redis_cbor_protocol_fixture() {
     let (storage, server) =
         protocol_fixture(teloxide::dispatching::dialogue::serializer::Cbor).await;
-    test_redis(storage).await;
+    compio::time::timeout(std::time::Duration::from_secs(5), test_redis(storage))
+        .await
+        .expect("scripted Redis dialogue exchange must finish");
     server.await.unwrap();
 }
 

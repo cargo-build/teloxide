@@ -322,7 +322,7 @@ async fn freeze(
                  telegram"
             );
 
-            compio::time::sleep_until(until.into()).await;
+            compio::time::sleep_until(until).await;
 
             log::warn!("unfreezing the bot");
         }

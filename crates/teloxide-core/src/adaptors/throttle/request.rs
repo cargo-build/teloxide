@@ -210,7 +210,7 @@ where
 
             if retry {
                 log::warn!("Freezing, before retrying: {retry_after:?}");
-                compio::time::sleep_until(until.into()).await;
+                compio::time::sleep_until(until).await;
             }
         }
 

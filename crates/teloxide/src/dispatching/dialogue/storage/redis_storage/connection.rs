@@ -60,8 +60,7 @@ impl Pool {
             Some(connection) => connection,
             None => Connection::connect(&self.info).await?,
         };
-        // A cancelled or failed exchange owns and drops its socket before
-        // releasing the permit.
+        // A cancelled or failed exchange owns and drops its socket before releasing the permit.
         let value = connection.command(command).await?;
         self.idle.borrow_mut().push_back(connection);
         T::from_owned_redis_value(value)
@@ -237,7 +236,11 @@ mod tests {
                 }
             }
         });
-        let bytes: Vec<u8> = pool.command(redis::cmd("GET").arg(123)).await.unwrap();
+        let bytes: Vec<u8> =
+            compio::time::timeout(Duration::from_secs(5), pool.command(redis::cmd("GET").arg(123)))
+                .await
+                .expect("fragmented Redis response must finish")
+                .unwrap();
         assert_eq!(bytes, b"hello");
         server.await.unwrap();
     }
