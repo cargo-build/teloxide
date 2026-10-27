@@ -6,13 +6,13 @@ mod trace_storage;
 #[cfg(feature = "redis-storage")]
 mod redis_storage;
 
-#[cfg(any(feature = "sqlite-storage-nativetls", feature = "sqlite-storage-rustls"))]
+#[cfg(feature = "sqlite-storage")]
 mod sqlite_storage;
 
-#[cfg(any(feature = "postgres-storage-nativetls", feature = "postgres-storage-rustls"))]
+#[cfg(feature = "postgres-storage")]
 mod postgres_storage;
 
-use futures::future::BoxFuture;
+use futures::future::LocalBoxFuture;
 use teloxide_core::types::ChatId;
 
 pub use self::{
@@ -25,15 +25,14 @@ pub use redis_storage::{RedisStorage, RedisStorageError};
 pub use serializer::Serializer;
 use std::sync::Arc;
 
-#[cfg(any(feature = "sqlite-storage-nativetls", feature = "sqlite-storage-rustls"))]
+#[cfg(feature = "sqlite-storage")]
 pub use sqlite_storage::{SqliteStorage, SqliteStorageError};
 
-#[cfg(any(feature = "postgres-storage-nativetls", feature = "postgres-storage-rustls"))]
+#[cfg(feature = "postgres-storage")]
 pub use postgres_storage::{PostgresStorage, PostgresStorageError};
 
 /// A storage with an erased error type.
-pub type ErasedStorage<D> =
-    dyn Storage<D, Error = Box<dyn std::error::Error + Send + Sync>> + Send + Sync;
+pub type ErasedStorage<D> = dyn Storage<D, Error = Box<dyn std::error::Error + Send + Sync>>;
 
 /// A storage of dialogues.
 ///
@@ -63,9 +62,9 @@ pub trait Storage<D> {
     fn remove_dialogue(
         self: Arc<Self>,
         chat_id: ChatId,
-    ) -> BoxFuture<'static, Result<(), Self::Error>>
+    ) -> LocalBoxFuture<'static, Result<(), Self::Error>>
     where
-        D: Send + 'static;
+        D: 'static;
 
     /// Updates a dialogue indexed by `chat_id` with `dialogue`.
     #[must_use = "Futures are lazy and do nothing unless polled with .await"]
@@ -73,22 +72,22 @@ pub trait Storage<D> {
         self: Arc<Self>,
         chat_id: ChatId,
         dialogue: D,
-    ) -> BoxFuture<'static, Result<(), Self::Error>>
+    ) -> LocalBoxFuture<'static, Result<(), Self::Error>>
     where
-        D: Send + 'static;
+        D: 'static;
 
     /// Returns the dialogue indexed by `chat_id`.
     #[must_use = "Futures are lazy and do nothing unless polled with .await"]
     fn get_dialogue(
         self: Arc<Self>,
         chat_id: ChatId,
-    ) -> BoxFuture<'static, Result<Option<D>, Self::Error>>;
+    ) -> LocalBoxFuture<'static, Result<Option<D>, Self::Error>>;
 
     /// Erases [`Self::Error`] to [`std::error::Error`].
     #[must_use]
     fn erase(self: Arc<Self>) -> Arc<ErasedStorage<D>>
     where
-        Self: Sized + Send + Sync + 'static,
+        Self: Sized + 'static,
         Self::Error: std::error::Error + Send + Sync + 'static,
     {
         Arc::new(Eraser(self))
@@ -99,7 +98,7 @@ struct Eraser<S>(Arc<S>);
 
 impl<D, S> Storage<D> for Eraser<S>
 where
-    S: Storage<D> + Send + Sync + 'static,
+    S: Storage<D> + 'static,
     S::Error: std::error::Error + Send + Sync + 'static,
 {
     type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -107,9 +106,9 @@ where
     fn remove_dialogue(
         self: Arc<Self>,
         chat_id: ChatId,
-    ) -> BoxFuture<'static, Result<(), Self::Error>>
+    ) -> LocalBoxFuture<'static, Result<(), Self::Error>>
     where
-        D: Send + 'static,
+        D: 'static,
     {
         Box::pin(
             async move { Arc::clone(&self.0).remove_dialogue(chat_id).await.map_err(|e| e.into()) },
@@ -120,9 +119,9 @@ where
         self: Arc<Self>,
         chat_id: ChatId,
         dialogue: D,
-    ) -> BoxFuture<'static, Result<(), Self::Error>>
+    ) -> LocalBoxFuture<'static, Result<(), Self::Error>>
     where
-        D: Send + 'static,
+        D: 'static,
     {
         Box::pin(async move {
             Arc::clone(&self.0).update_dialogue(chat_id, dialogue).await.map_err(|e| e.into())
@@ -132,7 +131,7 @@ where
     fn get_dialogue(
         self: Arc<Self>,
         chat_id: ChatId,
-    ) -> BoxFuture<'static, Result<Option<D>, Self::Error>> {
+    ) -> LocalBoxFuture<'static, Result<Option<D>, Self::Error>> {
         Box::pin(
             async move { Arc::clone(&self.0).get_dialogue(chat_id).await.map_err(|e| e.into()) },
         )
@@ -143,7 +142,7 @@ where
 mod tests {
     use super::*;
 
-    #[tokio::test]
+    #[compio::test]
     async fn test_erased() {
         let chat_id = ChatId(123);
 
@@ -152,5 +151,14 @@ mod tests {
         assert_eq!(Arc::clone(&erased).get_dialogue(chat_id).await.unwrap().unwrap(), 1);
         Arc::clone(&erased).remove_dialogue(chat_id).await.unwrap();
         assert_eq!(Arc::clone(&erased).get_dialogue(chat_id).await.unwrap(), None);
+    }
+
+    #[compio::test]
+    async fn test_local_dialogue_state() {
+        let storage = InMemStorage::new();
+        let state = std::rc::Rc::new("local state".to_owned());
+        storage.clone().update_dialogue(ChatId(123), state.clone()).await.unwrap();
+        let retrieved = storage.get_dialogue(ChatId(123)).await.unwrap().unwrap();
+        assert!(std::rc::Rc::ptr_eq(&state, &retrieved));
     }
 }

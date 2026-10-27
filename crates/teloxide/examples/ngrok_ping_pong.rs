@@ -3,7 +3,7 @@
 
 use teloxide::{prelude::*, update_listeners::webhooks};
 
-#[tokio::main]
+#[compio::main]
 async fn main() {
     pretty_env_logger::init();
     log::info!("Starting ngrok ping-pong bot...");
@@ -12,7 +12,7 @@ async fn main() {
 
     let addr = ([127, 0, 0, 1], 8443).into();
     let url = "Your HTTPS ngrok URL here. Get it by `ngrok http 8443`".parse().unwrap();
-    let listener = webhooks::axum(bot.clone(), webhooks::Options::new(addr, url))
+    let listener = webhooks::tako(bot.clone(), webhooks::Options::new(addr, url))
         .await
         .expect("Couldn't setup webhook");
 

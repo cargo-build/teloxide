@@ -26,7 +26,7 @@ pub enum InlineKeyboardButtonKind {
     /// Links in the form of `tg://user?id=<user_id>` can be used to mention a
     /// user by their ID without using a username, if this is allowed by
     /// their privacy settings.
-    Url(reqwest::Url),
+    Url(url::Url),
 
     /// An HTTPS URL used to automatically authorize the user. Can be used as a
     /// replacement for the [Telegram Login Widget].
@@ -119,7 +119,7 @@ impl InlineKeyboardButton {
     /// Constructor for `InlineKeyboardButton` with [`Url`] kind.
     ///
     /// [`Url`]: InlineKeyboardButtonKind::Url
-    pub fn url<T>(text: T, url: reqwest::Url) -> Self
+    pub fn url<T>(text: T, url: url::Url) -> Self
     where
         T: Into<String>,
     {

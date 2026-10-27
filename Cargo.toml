@@ -5,12 +5,12 @@ resolver = "2"
 # The settings below will be applied to all crates in the workspace
 [workspace.package]
 # MSRV (minimal supported Rust version).
-rust-version = "1.85"
+rust-version = "1.99"
 edition = "2021"
 
 license = "MIT"
 homepage = "https://github.com/teloxide/teloxide"
-repository = "https://github.com/teloxide/teloxide"
+repository = "https://github.com/cargo-build/teloxide"
 
 [workspace.metadata.release]
 tag-message = "Release {{crate_name}} version {{version}}"

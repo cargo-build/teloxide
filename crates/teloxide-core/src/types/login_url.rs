@@ -29,7 +29,7 @@ pub struct LoginUrl {
     /// authorization].
     ///
     /// [Checking authorization]: https://core.telegram.org/widgets/login#checking-authorization
-    pub url: reqwest::Url,
+    pub url: url::Url,
     /// New text of the button in forwarded messages.
     pub forward_text: Option<String>,
     /// Username of a bot, which will be used for user authorization. See
@@ -48,7 +48,7 @@ pub struct LoginUrl {
 
 impl LoginUrl {
     #[must_use]
-    pub fn url(mut self, val: reqwest::Url) -> Self {
+    pub fn url(mut self, val: url::Url) -> Self {
         self.url = val;
         self
     }

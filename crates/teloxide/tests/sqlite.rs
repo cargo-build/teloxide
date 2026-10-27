@@ -1,89 +1,103 @@
 use std::{
     fmt::{Debug, Display},
     fs,
-    sync::Arc,
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
 };
+
 use teloxide::{
-    dispatching::dialogue::{Serializer, SqliteStorage, SqliteStorageError, Storage},
+    dispatching::dialogue::{serializer, Serializer, SqliteStorage, SqliteStorageError, Storage},
     types::ChatId,
 };
 
-#[tokio::test(flavor = "multi_thread")]
+#[compio::test]
 async fn test_sqlite_json() {
-    fs::create_dir("./test_db1").unwrap();
-    let storage = SqliteStorage::open(
-        "./test_db1/test_db1.sqlite",
-        teloxide::dispatching::dialogue::serializer::Json,
-    )
-    .await
-    .unwrap();
-    test_sqlite(storage).await;
-    fs::remove_dir_all("./test_db1").unwrap();
+    test_sqlite(|| serializer::Json).await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[compio::test]
 async fn test_sqlite_bincode() {
-    fs::create_dir("./test_db2").unwrap();
-    let storage = SqliteStorage::open(
-        "./test_db2/test_db2.sqlite",
-        teloxide::dispatching::dialogue::serializer::Bincode,
-    )
-    .await
-    .unwrap();
-    test_sqlite(storage).await;
-    fs::remove_dir_all("./test_db2").unwrap();
+    test_sqlite(|| serializer::Bincode).await;
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[compio::test]
 async fn test_sqlite_cbor() {
-    fs::create_dir("./test_db3").unwrap();
-    let storage = SqliteStorage::open(
-        "./test_db3/test_db3.sqlite",
-        teloxide::dispatching::dialogue::serializer::Cbor,
-    )
-    .await
-    .unwrap();
-    test_sqlite(storage).await;
-    fs::remove_dir_all("./test_db3").unwrap();
+    test_sqlite(|| serializer::Cbor).await;
 }
 
-type Dialogue = String;
+struct TestDatabase(PathBuf);
 
-macro_rules! test_dialogues {
-    ($storage:expr, $_0:expr, $_1:expr, $_2:expr) => {
-        assert_eq!(Arc::clone(&$storage).get_dialogue(ChatId(1)).await.unwrap(), $_0);
-        assert_eq!(Arc::clone(&$storage).get_dialogue(ChatId(11)).await.unwrap(), $_1);
-        assert_eq!(Arc::clone(&$storage).get_dialogue(ChatId(256)).await.unwrap(), $_2);
-    };
+impl TestDatabase {
+    fn new() -> Self {
+        static NEXT_DATABASE: AtomicUsize = AtomicUsize::new(0);
+        let name = format!(
+            "teloxide-sqlite-{}-{}.sqlite",
+            std::process::id(),
+            NEXT_DATABASE.fetch_add(1, Ordering::Relaxed)
+        );
+        Self(std::env::temp_dir().join(name))
+    }
 }
 
-async fn test_sqlite<S>(storage: Arc<SqliteStorage<S>>)
+impl Drop for TestDatabase {
+    fn drop(&mut self) {
+        fs::remove_file(&self.0).expect("remove the test-owned SQLite database");
+    }
+}
+
+async fn test_sqlite<S>(serializer: impl Fn() -> S)
 where
-    S: Send + Sync + Serializer<Dialogue> + 'static,
-    <S as Serializer<Dialogue>>::Error: Debug + Display,
+    S: Serializer<String> + 'static,
+    <S as Serializer<String>>::Error: Debug + Display,
 {
-    test_dialogues!(storage, None, None, None);
-
-    Arc::clone(&storage).update_dialogue(ChatId(1), "ABC".to_owned()).await.unwrap();
-    Arc::clone(&storage).update_dialogue(ChatId(11), "DEF".to_owned()).await.unwrap();
-    Arc::clone(&storage).update_dialogue(ChatId(256), "GHI".to_owned()).await.unwrap();
-
-    test_dialogues!(
-        storage,
-        Some("ABC".to_owned()),
-        Some("DEF".to_owned()),
-        Some("GHI".to_owned())
-    );
-
-    Arc::clone(&storage).remove_dialogue(ChatId(1)).await.unwrap();
-    Arc::clone(&storage).remove_dialogue(ChatId(11)).await.unwrap();
-    Arc::clone(&storage).remove_dialogue(ChatId(256)).await.unwrap();
-
-    test_dialogues!(storage, None, None, None);
-
-    // Check that a try to remove a non-existing dialogue results in an error.
+    let database = TestDatabase::new();
+    let path = database.0.to_str().unwrap();
+    let storage = SqliteStorage::open(path, serializer()).await.unwrap();
+    assert_eq!(storage.clone().get_dialogue(ChatId(1)).await.unwrap(), None);
     assert!(matches!(
-        Arc::clone(&storage).remove_dialogue(ChatId(1)).await.unwrap_err(),
-        SqliteStorageError::DialogueNotFound
+        storage.clone().remove_dialogue(ChatId(1)).await,
+        Err(SqliteStorageError::DialogueNotFound)
+    ));
+
+    storage.clone().update_dialogue(ChatId(1), "ABC".to_owned()).await.unwrap();
+    storage.clone().update_dialogue(ChatId(11), "DEF".to_owned()).await.unwrap();
+    storage.clone().update_dialogue(ChatId(256), "GHI".to_owned()).await.unwrap();
+    storage.clone().update_dialogue(ChatId(1), "replacement".to_owned()).await.unwrap();
+    assert_eq!(
+        storage.clone().get_dialogue(ChatId(1)).await.unwrap(),
+        Some("replacement".to_owned())
+    );
+    drop(storage);
+
+    let persisted = rusqlite::Connection::open(path).unwrap();
+    let bytes: Vec<u8> = persisted
+        .query_row("SELECT dialogue FROM teloxide_dialogues WHERE chat_id = ?", [1], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        bytes,
+        serializer().serialize(&"replacement".to_owned()).unwrap(),
+        "persisted bytes must retain the serializer format"
+    );
+    drop(persisted);
+
+    let reopened = SqliteStorage::open(path, serializer()).await.unwrap();
+    assert_eq!(
+        reopened.clone().get_dialogue(ChatId(1)).await.unwrap(),
+        Some("replacement".to_owned())
+    );
+    assert_eq!(reopened.clone().get_dialogue(ChatId(11)).await.unwrap(), Some("DEF".to_owned()));
+    assert_eq!(reopened.clone().get_dialogue(ChatId(256)).await.unwrap(), Some("GHI".to_owned()));
+    for chat_id in [1, 11, 256] {
+        Arc::clone(&reopened).remove_dialogue(ChatId(chat_id)).await.unwrap();
+        assert_eq!(Arc::clone(&reopened).get_dialogue(ChatId(chat_id)).await.unwrap(), None);
+    }
+    assert!(matches!(
+        reopened.clone().remove_dialogue(ChatId(1)).await,
+        Err(SqliteStorageError::DialogueNotFound)
     ));
 }

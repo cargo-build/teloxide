@@ -31,7 +31,7 @@ pub enum Command {
     Reset,
 }
 
-#[tokio::main]
+#[compio::main]
 async fn main() {
     pretty_env_logger::init();
     log::info!("Starting DB remember bot...");

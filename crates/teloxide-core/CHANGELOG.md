@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## unreleased
 
+### Compio fork
+
+- [**BC**] Use Cyper HTTP on compio, local request futures and native owned-buffer uploads/downloads; require Rust 1.99+.
+- Preserve multipart attachment IDs and cloned-reader replay; reject unsuccessful file-download statuses before writing their response bodies.
+
 ### Added
 
 - Support for TBA 9.2 ([#1403](https://github.com/teloxide/teloxide/pull/1403))

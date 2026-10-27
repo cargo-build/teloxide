@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use dptree::di::Injectable;
-use futures::future::BoxFuture;
+use futures::future::LocalBoxFuture;
 
 use crate::{
     dispatching::{HandlerExt, UpdateFilterExt},
@@ -39,8 +39,7 @@ use crate::{
 /// 3. `listener` is something that takes updates from a Telegram server and
 ///    implements [`UpdateListener`].
 ///
-/// All the other requirements are about thread safety and data validity and can
-/// be ignored for most of the time.
+/// The remaining bounds keep injected values alive for local dispatch.
 ///
 /// ## Handler arguments
 ///
@@ -72,41 +71,32 @@ pub trait CommandReplExt {
     ///
     /// See [`CommandReplExt`] for more details.
     #[must_use]
-    fn repl<'a, R, H, Args>(bot: R, handler: H) -> BoxFuture<'a, ()>
+    fn repl<'a, R, H, Args>(bot: R, handler: H) -> LocalBoxFuture<'a, ()>
     where
-        R: Requester + Clone + Send + Sync + 'static,
-        <R as Requester>::GetUpdates: Send,
-        <R as Requester>::GetWebhookInfo: Send,
-        <R as Requester>::GetMe: Send,
-        <R as Requester>::DeleteWebhook: Send,
-        H: Injectable<ResponseResult<()>, Args> + Send + Sync + 'static;
+        R: Requester + Clone + 'static,
+        H: Injectable<ResponseResult<()>, Args> + 'static;
 
     /// A REPL for commands with a custom [`UpdateListener`].
     ///
     /// See [`CommandReplExt`] for more details.
     #[must_use]
-    fn repl_with_listener<'a, R, H, L, Args>(bot: R, handler: H, listener: L) -> BoxFuture<'a, ()>
+    fn repl_with_listener<'a, R, H, L, Args>(bot: R, handler: H, listener: L) -> LocalBoxFuture<'a, ()>
     where
-        H: Injectable<ResponseResult<()>, Args> + Send + Sync + 'static,
-        L: UpdateListener + Send + 'a,
-        L::Err: Debug + Send + 'a,
-        R: Requester + Clone + Send + Sync + 'static,
-        <R as Requester>::GetMe: Send;
+        H: Injectable<ResponseResult<()>, Args> + 'static,
+        L: UpdateListener + 'a,
+        L::Err: Debug + 'a,
+        R: Requester + Clone + 'static;
 }
 
 #[cfg(feature = "ctrlc_handler")]
 impl<Cmd> CommandReplExt for Cmd
 where
-    Cmd: BotCommands + Send + Sync + 'static,
+    Cmd: BotCommands + 'static,
 {
-    fn repl<'a, R, H, Args>(bot: R, handler: H) -> BoxFuture<'a, ()>
+    fn repl<'a, R, H, Args>(bot: R, handler: H) -> LocalBoxFuture<'a, ()>
     where
-        R: Requester + Clone + Send + Sync + 'static,
-        <R as Requester>::GetUpdates: Send,
-        <R as Requester>::GetWebhookInfo: Send,
-        <R as Requester>::GetMe: Send,
-        <R as Requester>::DeleteWebhook: Send,
-        H: Injectable<ResponseResult<()>, Args> + Send + Sync + 'static,
+        R: Requester + Clone + 'static,
+        H: Injectable<ResponseResult<()>, Args> + 'static,
     {
         let cloned_bot = bot.clone();
 
@@ -120,13 +110,12 @@ where
         })
     }
 
-    fn repl_with_listener<'a, R, H, L, Args>(bot: R, handler: H, listener: L) -> BoxFuture<'a, ()>
+    fn repl_with_listener<'a, R, H, L, Args>(bot: R, handler: H, listener: L) -> LocalBoxFuture<'a, ()>
     where
-        H: Injectable<ResponseResult<()>, Args> + Send + Sync + 'static,
-        L: UpdateListener + Send + 'a,
-        L::Err: Debug + Send + 'a,
-        R: Requester + Clone + Send + Sync + 'static,
-        <R as Requester>::GetMe: Send,
+        H: Injectable<ResponseResult<()>, Args> + 'static,
+        L: UpdateListener + 'a,
+        L::Err: Debug + 'a,
+        R: Requester + Clone + 'static,
     {
         use crate::dispatching::Dispatcher;
 

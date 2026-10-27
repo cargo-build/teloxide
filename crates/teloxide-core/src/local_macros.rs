@@ -45,7 +45,7 @@ macro_rules! req_future {
 
             #[cfg(not(feature = "nightly"))]
             pub(crate) type $i<$T>
-            $(where $($wh)*)?  = ::core::pin::Pin<Box<dyn ::core::future::Future<Output = $Out> + ::core::marker::Send + 'static>>;
+            $(where $($wh)*)?  = ::core::pin::Pin<Box<dyn ::core::future::Future<Output = $Out> + 'static>>;
 
             #[cfg(not(feature = "nightly"))]
             pub(crate) fn def<$T>($( $arg: $ArgTy ),*) -> $i<$T>
@@ -379,13 +379,14 @@ macro_rules! download_forward {
 
             type Fut<'dst> = <$T as $crate::net::Download>::Fut<'dst>;
 
-            fn download_file<'dst>(
+            fn download_file<'dst, W>(
                 &self,
                 path: &'dst str,
-                destination: &'dst mut (dyn tokio::io::AsyncWrite
-                               + core::marker::Unpin
-                               + core::marker::Send),
-            ) -> Self::Fut<'dst> {
+                destination: &'dst mut W,
+            ) -> Self::Fut<'dst>
+            where
+                W: compio::io::AsyncWrite + ?Sized,
+            {
                 let $this = self;
                 ($inner).download_file(path, destination)
             }

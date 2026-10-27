@@ -21,33 +21,23 @@ categories = ["web-programming", "api-bindings", "asynchronous"]
 default = ["native-tls", "ctrlc_handler", "teloxide-core/default"]
 
 webhooks = ["rand"]
-webhooks-axum = ["webhooks", "axum", "tower", "tower-http"]
+webhooks-tako = ["webhooks", "dep:tako"]
 
-sqlite-storage-nativetls = [
-    "sqlx",
-    "sqlx/runtime-tokio-native-tls",
-    "native-tls",
-]
-sqlite-storage-rustls = ["sqlx", "sqlx/runtime-tokio-rustls", "rustls"]
-postgres-storage-nativetls = [
-    "sqlx",
-    "sqlx/runtime-tokio-native-tls",
-    "native-tls",
-]
-postgres-storage-rustls = ["sqlx", "sqlx/runtime-tokio-rustls", "rustls"]
-redis-storage = ["deadpool-redis"]
+sqlite-storage = ["dep:rusqlite"]
+postgres-storage = ["dep:compio-postgres"]
+redis-storage = ["dep:redis", "dep:async-lock", "dep:num_cpus"]
 
 cbor-serializer = ["serde_cbor"]
 bincode-serializer = ["bincode"]
 
 macros = ["teloxide-macros"]
 
-ctrlc_handler = ["tokio/signal"]
+ctrlc_handler = ["compio/signal"]
 
 tracing = ["dep:tracing"]
 
-native-tls = ["teloxide-core/native-tls"]
-rustls = ["teloxide-core/rustls"]
+native-tls = ["teloxide-core/native-tls", "compio/native-tls", "compio-postgres?/native-tls"]
+rustls = ["teloxide-core/rustls", "compio/rustls", "compio/ring", "compio-postgres?/rustls"]
 rustls-native-roots = ["teloxide-core/rustls-native-roots"]
 throttle = ["teloxide-core/throttle"]
 cache-me = [
@@ -62,12 +52,10 @@ nightly = ["teloxide-core/nightly"]
 
 full = [
     "webhooks",
-    "webhooks-axum",
-    "sqlite-storage-nativetls",
-    # "sqlite-storage-rustls" is explicitly ommited here,
-    # since it conflicts with "sqlite-storage-nativetls"
+    "webhooks-tako",
+    "sqlite-storage",
     "redis-storage",
-    "postgres-storage-nativetls",
+    "postgres-storage",
     "cbor-serializer",
     "bincode-serializer",
     "macros",
@@ -91,11 +79,10 @@ teloxide-macros = { path = "../teloxide-macros", optional = true }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 
-dptree = "0.5.1"
+dptree = { path = "../dptree" }
 
-tokio = { version = "1.39", features = ["fs", "rt-multi-thread"] }
-tokio-util = "0.7"
-tokio-stream = "0.1.8"
+async-channel = "2"
+event-listener = "5"
 
 url = "2.2.2"
 log = "0.4"
@@ -109,19 +96,15 @@ pin-project = "1.0"
 aquamarine = "0.6.0"
 either = "1.9.0"
 
-sqlx = { version = "0.8.1", optional = true, default-features = false, features = [
-    "macros",
-    "sqlite",
-    "postgres",
-] }
-deadpool-redis = { version = "0.22", features = [
-    "rt_tokio_1",
-], optional = true }
+compio = { version = "0.19.2", default-features = false, features = ["runtime", "io-uring", "fs", "net", "io-compat", "time", "macros"] }
+async-lock = { version = "3.4", optional = true }
+rusqlite = { version = "0.37", optional = true, features = ["bundled"] }
+compio-postgres = { path = "../compio-postgres", optional = true, default-features = false }
+redis = { version = "0.32.5", optional = true, default-features = false }
+num_cpus = { version = "1.11.1", optional = true }
 serde_cbor = { version = "0.11", optional = true }
 bincode = { version = "1.3", optional = true }
-axum = { version = "0.8.0", optional = true }
-tower = { version = "0.5.0", optional = true }
-tower-http = { version = "0.6.2", features = ["trace"], optional = true }
+tako = { package = "tako-rs", version = "2.5.0", default-features = false, features = ["compio"], optional = true }
 rand = { version = "0.9.2", default-features = false, features = [
     "thread_rng",
 ], optional = true }
@@ -134,14 +117,11 @@ rand = { version = "0.9.2", default-features = false, features = [
 pretty_env_logger = "0.5.0"
 serde = "1"
 serde_json = "1"
-tokio = { version = "1.39", features = ["fs", "rt-multi-thread", "macros"] }
-reqwest = "0.13.3"
+cyper = { version = "0.9.0", default-features = false, features = ["json", "stream", "multipart"] }
 chrono = "0.4"
-tokio-stream = "0.1"
 
 
 [package.metadata.docs.rs]
-# NB: can't use `all-features = true`, because `sqlite-storage-nativetls` conflicts with `sqlite-storage-rustls`
 features = ["full", "nightly"]
 rustdoc-args = ["--cfg", "docsrs"]
 rustc-args = ["--cfg", "dep_docsrs"]
@@ -164,7 +144,7 @@ required-features = ["redis-storage", "cbor-serializer", "bincode-serializer"]
 name = "sqlite"
 path = "tests/sqlite.rs"
 required-features = [
-    "sqlite-storage-nativetls",
+    "sqlite-storage",
     "cbor-serializer",
     "bincode-serializer",
 ]
@@ -173,7 +153,7 @@ required-features = [
 name = "postgres"
 path = "tests/postgres.rs"
 required-features = [
-    "postgres-storage-nativetls",
+    "postgres-storage",
     "cbor-serializer",
     "bincode-serializer",
 ]
@@ -204,7 +184,7 @@ required-features = ["macros", "ctrlc_handler"]
 [[example]]
 name = "db_remember"
 required-features = [
-    "sqlite-storage-nativetls",
+    "sqlite-storage",
     "redis-storage",
     "bincode-serializer",
     "macros",
@@ -224,7 +204,7 @@ required-features = ["macros", "ctrlc_handler"]
 
 [[example]]
 name = "heroku_ping_pong"
-required-features = ["webhooks-axum", "ctrlc_handler"]
+required-features = ["webhooks-tako", "ctrlc_handler"]
 
 [[example]]
 name = "inline"
@@ -232,7 +212,7 @@ required-features = ["macros", "ctrlc_handler"]
 
 [[example]]
 name = "ngrok_ping_pong"
-required-features = ["webhooks-axum", "ctrlc_handler"]
+required-features = ["webhooks-tako", "ctrlc_handler"]
 
 [[example]]
 name = "purchase"

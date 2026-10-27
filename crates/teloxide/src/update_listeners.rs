@@ -105,10 +105,7 @@ pub trait AsUpdateStream<'a> {
     type StreamErr;
 
     /// The stream of updates from Telegram.
-    // NB: `Send` is not strictly required here, but it makes it easier to return
-    //     `impl AsUpdateStream` and also you want `Send` streams almost (?) always
-    //     anyway.
-    type Stream: Stream<Item = Result<Update, Self::StreamErr>> + Send + 'a;
+    type Stream: Stream<Item = Result<Update, Self::StreamErr>> + 'a;
 
     /// Creates the update [`Stream`].
     ///

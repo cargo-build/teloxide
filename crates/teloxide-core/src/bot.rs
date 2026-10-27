@@ -1,6 +1,6 @@
-use std::{future::Future, sync::Arc};
+use std::{future::Future, sync::Arc, time::Duration};
 
-use reqwest::Client;
+use cyper::Client;
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
@@ -56,36 +56,37 @@ const TELOXIDE_API_URL: &str = "TELOXIDE_API_URL";
 #[derive(Debug, Clone)]
 pub struct Bot {
     token: Arc<str>,
-    api_url: Arc<reqwest::Url>,
+    api_url: Arc<url::Url>,
     client: Client,
+    request_timeout: Duration,
 }
 
 /// Constructors
 impl Bot {
     /// Creates a new `Bot` with the specified token and the default
-    /// [http-client](reqwest::Client).
+    /// [http-client](cyper::Client).
     ///
     /// # Panics
     ///
-    /// If it cannot create [`reqwest::Client`].
+    /// If it cannot create [`cyper::Client`].
     pub fn new<S>(token: S) -> Self
     where
         S: Into<String>,
     {
-        let client = net::default_reqwest_settings().build().expect("Client creation failed");
+        let client = net::default_cyper_settings().build().expect("Client creation failed");
 
         Self::with_client(token, client)
     }
 
     /// Creates a new `Bot` with the specified token and your
-    /// [`reqwest::Client`].
+    /// [`cyper::Client`].
     ///
     /// # Caution
     ///
     /// Your custom client might not be configured correctly to be able to work
     /// in long time durations, see [issue 223].
     ///
-    /// [`reqwest::Client`]: https://docs.rs/reqwest/latest/reqwest/struct.Client.html
+    /// [`cyper::Client`]: https://docs.rs/cyper/latest/cyper/struct.Client.html
     /// [issue 223]: https://github.com/teloxide/teloxide/issues/223
     pub fn with_client<S>(token: S, client: Client) -> Self
     where
@@ -93,37 +94,37 @@ impl Bot {
     {
         let token = Into::<String>::into(token).into();
         let api_url = Arc::new(
-            reqwest::Url::parse(net::TELEGRAM_API_URL)
+            url::Url::parse(net::TELEGRAM_API_URL)
                 .expect("Failed to parse the default TBA URL"),
         );
 
-        Self { token, api_url, client }
+        Self { token, api_url, client, request_timeout: net::DEFAULT_REQUEST_TIMEOUT }
     }
 
     /// Creates a new `Bot` with the `TELOXIDE_TOKEN` & `TELOXIDE_API_URL` &
     /// `TELOXIDE_PROXY` environmental variables (the bot's token & the bot's
-    /// API URL & the proxy) and the default [`reqwest::Client`].
+    /// API URL & the proxy) and the default [`cyper::Client`].
     ///
     /// If `TELOXIDE_API_URL` doesn't exist, returns to the default TBA URL.
     ///
     /// This function passes the value of `TELOXIDE_PROXY` into
-    /// [`reqwest::Proxy::all`], if it exists, otherwise returns the default
+    /// [`cyper::proxy::Proxy::all`], if it exists, otherwise returns the default
     /// client.
     ///
     /// # Panics
     ///  - If cannot get the `TELOXIDE_TOKEN`  environmental variable.
     ///  - If `TELOXIDE_API_URL` exists, but isn't a correct URL.
-    ///  - If it cannot create [`reqwest::Client`].
+    ///  - If it cannot create [`cyper::Client`].
     ///
-    /// [`reqwest::Client`]: https://docs.rs/reqwest/0.10.1/reqwest/struct.Client.html
-    /// [`reqwest::Proxy::all`]: https://docs.rs/reqwest/latest/reqwest/struct.Proxy.html#method.all
+    /// [`cyper::Client`]: https://docs.rs/cyper/latest/cyper/struct.Client.html
+    /// [`cyper::proxy::Proxy::all`]: https://docs.rs/cyper/latest/cyper/proxy/struct.Proxy.html#method.all
     pub fn from_env() -> Self {
         Self::from_env_with_client(crate::net::client_from_env())
     }
 
     /// Creates a new `Bot` with the `TELOXIDE_TOKEN` environmental variable
     /// (the bot's token), `TELOXIDE_API_URL` environmental variable (the bot's
-    /// API URL) and your [`reqwest::Client`].
+    /// API URL) and your [`cyper::Client`].
     ///
     /// If `TELOXIDE_API_URL` doesn't exist, returns to the default TBA URL.
     ///
@@ -135,7 +136,7 @@ impl Bot {
     /// Your custom client might not be configured correctly to be able to work
     /// in long time durations, see [issue 223].
     ///
-    /// [`reqwest::Client`]: https://docs.rs/reqwest/0.10.1/reqwest/struct.Client.html
+    /// [`cyper::Client`]: https://docs.rs/cyper/latest/cyper/struct.Client.html
     /// [issue 223]: https://github.com/teloxide/teloxide/issues/223
     pub fn from_env_with_client(client: Client) -> Self {
         let bot = Self::with_client(get_env(TELOXIDE_TOKEN), client);
@@ -148,7 +149,7 @@ impl Bot {
                 } else {
                     &env_api_url
                 };
-                let api_url = reqwest::Url::parse(env_api_url)
+                let api_url = url::Url::parse(env_api_url)
                     .expect("Failed to parse the `TELOXIDE_API_URL` env variable");
                 bot.set_api_url(api_url)
             }
@@ -172,7 +173,7 @@ impl Bot {
     /// };
     ///
     /// # async {
-    /// let url = reqwest::Url::parse("https://localhost/tbas").unwrap();
+    /// let url = url::Url::parse("https://localhost/tbas").unwrap();
     /// let bot = Bot::new("TOKEN").set_api_url(url);
     /// // From now all methods will use "https://localhost/tbas" as an API URL.
     /// bot.get_me().await
@@ -189,14 +190,21 @@ impl Bot {
     ///
     /// let bot = Bot::new("TOKEN");
     /// let bot2 = bot.clone();
-    /// let bot = bot.set_api_url(reqwest::Url::parse("https://example.com/").unwrap());
+    /// let bot = bot.set_api_url(url::Url::parse("https://example.com/").unwrap());
     ///
     /// assert_eq!(bot.api_url().as_str(), "https://example.com/");
     /// assert_eq!(bot.clone().api_url().as_str(), "https://example.com/");
     /// assert_ne!(bot2.api_url().as_str(), "https://example.com/");
     /// ```
-    pub fn set_api_url(mut self, url: reqwest::Url) -> Self {
+    pub fn set_api_url(mut self, url: url::Url) -> Self {
         self.api_url = Arc::new(url);
+        self
+    }
+
+    /// Sets the request and download deadline; long polls add their payload timeout.
+    /// The default is 17 seconds. Existing clones retain their own setting.
+    pub fn set_request_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = timeout;
         self
     }
 }
@@ -215,10 +223,16 @@ impl Bot {
         &self.client
     }
 
+    /// Returns the base request and download deadline.
+    #[must_use]
+    pub fn request_timeout(&self) -> Duration {
+        self.request_timeout
+    }
+
     /// Returns currently used token API URL.
     #[must_use]
-    pub fn api_url(&self) -> reqwest::Url {
-        reqwest::Url::clone(&*self.api_url)
+    pub fn api_url(&self) -> url::Url {
+        url::Url::clone(&*self.api_url)
     }
 }
 
@@ -235,6 +249,7 @@ impl Bot {
         let token = Arc::clone(&self.token);
         let api_url = Arc::clone(&self.api_url);
 
+        let request_timeout = self.request_timeout;
         let timeout_hint = payload.timeout_hint();
         let params = stacker::maybe_grow(256 * 1024, 1024 * 1024, || serde_json::to_vec(payload))
             // this `expect` should be ok since we don't write request those may trigger error here
@@ -245,9 +260,10 @@ impl Bot {
             net::request_json(
                 &client,
                 token.as_ref(),
-                reqwest::Url::clone(&*api_url),
+                url::Url::clone(&*api_url),
                 P::NAME,
                 params,
+                request_timeout,
                 timeout_hint,
             )
             .await
@@ -266,6 +282,7 @@ impl Bot {
         let token = Arc::clone(&self.token);
         let api_url = Arc::clone(&self.api_url);
 
+        let request_timeout = self.request_timeout;
         let timeout_hint = payload.timeout_hint();
         let params = serde_multipart::to_form(payload);
 
@@ -275,9 +292,10 @@ impl Bot {
             net::request_multipart(
                 &client,
                 token.as_ref(),
-                reqwest::Url::clone(&*api_url),
+                url::Url::clone(&*api_url),
                 P::NAME,
                 params,
+                request_timeout,
                 timeout_hint,
             )
             .await
@@ -296,6 +314,7 @@ impl Bot {
         let token = Arc::clone(&self.token);
         let api_url = self.api_url.clone();
 
+        let request_timeout = self.request_timeout;
         let timeout_hint = payload.timeout_hint();
         let params = serde_multipart::to_form_ref(payload);
 
@@ -305,9 +324,10 @@ impl Bot {
             net::request_multipart(
                 &client,
                 token.as_ref(),
-                reqwest::Url::clone(&*api_url),
+                url::Url::clone(&*api_url),
                 P::NAME,
                 params,
+                request_timeout,
                 timeout_hint,
             )
             .await

@@ -1,9 +1,7 @@
 use std::{any::TypeId, sync::Arc, time::Duration};
 
-use reqwest::{
-    header::{HeaderValue, CONTENT_TYPE},
-    Client, Response,
-};
+use cyper::{Client, Response};
+use http::header::{HeaderValue, CONTENT_TYPE};
 use serde::de::DeserializeOwned;
 
 use crate::{net::TelegramResponse, requests::ResponseResult, RequestError};
@@ -13,10 +11,11 @@ const DELAY_ON_SERVER_ERROR: Duration = Duration::from_secs(10);
 pub async fn request_multipart<T>(
     client: &Client,
     token: &str,
-    api_url: reqwest::Url,
+    api_url: url::Url,
     method_name: &str,
-    params: reqwest::multipart::Form,
-    _timeout_hint: Option<Duration>,
+    params: cyper::multipart::Form,
+    request_timeout: Duration,
+    timeout_hint: Option<Duration>,
 ) -> ResponseResult<T>
 where
     T: DeserializeOwned + 'static,
@@ -35,27 +34,21 @@ where
     let method_name = method_name.trim_end_matches("Inline");
 
     let request = client
-        .post(crate::net::method_url(api_url, token, method_name))
-        .multipart(params)
-        .build()?;
+        .post(crate::net::method_url(api_url, token, method_name))?
+        .multipart(params)?
+        .build();
 
-    // FIXME: uncomment this, when reqwest starts setting default timeout early
-    // if let Some(timeout) = timeout_hint {
-    //     *request.timeout_mut().get_or_insert(Duration::ZERO) += timeout;
-    // }
-
-    let response = client.execute(request).await?;
-
-    process_response(response).await
+    execute(client, request, request_timeout, timeout_hint).await
 }
 
 pub async fn request_json<T>(
     client: &Client,
     token: &str,
-    api_url: reqwest::Url,
+    api_url: url::Url,
     method_name: &str,
     params: Vec<u8>,
-    _timeout_hint: Option<Duration>,
+    request_timeout: Duration,
+    timeout_hint: Option<Duration>,
 ) -> ResponseResult<T>
 where
     T: DeserializeOwned + 'static,
@@ -74,19 +67,30 @@ where
     let method_name = method_name.trim_end_matches("Inline");
 
     let request = client
-        .post(crate::net::method_url(api_url, token, method_name))
-        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+        .post(crate::net::method_url(api_url, token, method_name))?
+        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))?
         .body(params)
-        .build()?;
+        .build();
 
-    // FIXME: uncomment this, when reqwest starts setting default timeout early
-    // if let Some(timeout) = timeout_hint {
-    //     *request.timeout_mut().get_or_insert(Duration::ZERO) += timeout;
-    // }
+    execute(client, request, request_timeout, timeout_hint).await
+}
 
-    let response = client.execute(request).await?;
-
-    process_response(response).await
+async fn execute<T>(
+    client: &Client,
+    request: cyper::Request,
+    request_timeout: Duration,
+    timeout_hint: Option<Duration>,
+) -> ResponseResult<T>
+where
+    T: DeserializeOwned + 'static,
+{
+    let deadline = super::request_deadline(request_timeout, timeout_hint)?;
+    compio::time::timeout_at(deadline, async {
+        let response = client.execute(request).await?;
+        process_response(response).await
+    })
+    .await
+    .map_err(|_| cyper::Error::Timeout)?
 }
 
 async fn process_response<T>(response: Response) -> ResponseResult<T>
@@ -94,7 +98,7 @@ where
     T: DeserializeOwned + 'static,
 {
     if response.status().is_server_error() {
-        tokio::time::sleep(DELAY_ON_SERVER_ERROR).await;
+        compio::time::sleep(DELAY_ON_SERVER_ERROR).await;
     }
 
     let text = response.text().await?;

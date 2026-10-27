@@ -1,0 +1,17 @@
+[package]
+name = "dptree"
+version = "0.5.1"
+edition = "2018"
+description = "An asynchronous event dispatch mechanism for Rust"
+documentation = "https://docs.rs/dptree/"
+categories = ["asynchronous", "rust-patterns"]
+license = "MIT"
+repository = "https://github.com/teloxide/dptree"
+
+[dependencies]
+colored = "3"
+futures = { version = "0.3", default-features = false, features = ["alloc"] }
+
+[dev-dependencies]
+compio = { version = "0.19.2", features = ["macros", "time"] }
+maplit = "1"

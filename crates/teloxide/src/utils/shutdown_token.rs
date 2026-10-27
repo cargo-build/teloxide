@@ -1,13 +1,11 @@
 use std::{
     fmt,
     future::Future,
-    sync::{
-        atomic::{AtomicU8, Ordering},
-        Arc,
-    },
+    rc::Rc,
+    sync::atomic::{AtomicU8, Ordering},
 };
 
-use tokio::sync::Notify;
+use event_listener::Event;
 
 /// A token which used to shutdown [`Dispatcher`].
 ///
@@ -15,8 +13,8 @@ use tokio::sync::Notify;
 #[derive(Clone)]
 pub struct ShutdownToken {
     // FIXME: use a single arc
-    dispatcher_state: Arc<DispatcherState>,
-    shutdown_notify_back: Arc<Notify>,
+    dispatcher_state: Rc<DispatcherState>,
+    shutdown_notify_back: Rc<Event>,
 }
 
 /// This error is returned from [`ShutdownToken::shutdown`] when trying to
@@ -35,17 +33,24 @@ impl ShutdownToken {
     /// ignored.
     pub fn shutdown(&self) -> Result<impl Future<Output = ()> + '_, IdleShutdownError> {
         match shutdown_inner(&self.dispatcher_state) {
-            Ok(()) | Err(Ok(AlreadyShuttingDown)) => Ok(async move {
-                log::info!("Trying to shutdown the dispatcher...");
-                self.shutdown_notify_back.notified().await
-            }),
+            Ok(()) | Err(Ok(AlreadyShuttingDown)) => {
+                // Registering the listener eagerly (unlike a `Notified` future,
+                // which only registers when first polled) guarantees the
+                // dispatcher's completion notification cannot be missed between
+                // this call and the await.
+                let listener = self.shutdown_notify_back.listen();
+                Ok(async move {
+                    log::info!("Trying to shutdown the dispatcher...");
+                    listener.await
+                })
+            }
             Err(Err(err)) => Err(err),
         }
     }
 
     pub(crate) fn new() -> Self {
         Self {
-            dispatcher_state: Arc::new(DispatcherState {
+            dispatcher_state: Rc::new(DispatcherState {
                 inner: AtomicU8::new(ShutdownState::Idle as _),
                 notify: <_>::default(),
             }),
@@ -54,7 +59,7 @@ impl ShutdownToken {
     }
 
     pub(crate) async fn wait_for_changes(&self) {
-        self.dispatcher_state.notify.notified().await;
+        self.dispatcher_state.notify.listen().await;
     }
 
     pub(crate) fn start_dispatching(&self) {
@@ -78,7 +83,7 @@ impl ShutdownToken {
             // Stopped because of a `shutdown` call.
 
             // Notify `shutdown`s that we finished
-            self.shutdown_notify_back.notify_waiters();
+            self.shutdown_notify_back.notify(usize::MAX);
             log::info!("Dispatching has been shut down.");
         } else {
             log::info!("Dispatching has been stopped (listener returned `None`).");
@@ -98,7 +103,7 @@ impl std::error::Error for IdleShutdownError {}
 
 struct DispatcherState {
     inner: AtomicU8,
-    notify: Notify,
+    notify: Event,
 }
 
 impl DispatcherState {
@@ -109,7 +114,8 @@ impl DispatcherState {
 
     fn store(&self, new: ShutdownState) {
         self.inner.store(new as _, Ordering::Relaxed);
-        self.notify.notify_waiters();
+        // Notify all currently waiting listeners (like `Notify::notify_waiters`).
+        self.notify.notify(usize::MAX);
     }
 
     fn compare_exchange(
@@ -122,7 +128,7 @@ impl DispatcherState {
             .map(ShutdownState::from_u8)
             .map_err(ShutdownState::from_u8)
             // FIXME: `Result::inspect` when :(
-            .inspect(|_| self.notify.notify_waiters())
+            .inspect(|_| { self.notify.notify(usize::MAX); })
     }
 }
 

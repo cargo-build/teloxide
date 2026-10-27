@@ -26,7 +26,11 @@ pub enum RequestError {
     /// Network error while sending a request to Telegram.
     #[error("A network error: {0}")]
     // NOTE: this variant must not be created by anything except the explicit From impl
-    Network(#[source] Arc<reqwest::Error>),
+    Network(#[source] Arc<cyper::Error>),
+
+    /// The file server rejected a download propagated into this request.
+    #[error("HTTP status: {0}")]
+    HttpStatus(http::StatusCode),
 
     /// Error while parsing a response from Telegram.
     ///
@@ -53,7 +57,11 @@ pub enum DownloadError {
     /// A network error while downloading a file from Telegram.
     #[error("A network error: {0}")]
     // NOTE: this variant must not be created by anything except the explicit From impl
-    Network(#[source] Arc<reqwest::Error>),
+    Network(#[source] Arc<cyper::Error>),
+
+    /// The file server rejected the download request.
+    #[error("HTTP status: {0}")]
+    HttpStatus(http::StatusCode),
 
     /// An I/O error while writing a file to destination.
     #[error("An I/O error: {0}")]
@@ -780,12 +788,13 @@ impl From<DownloadError> for RequestError {
         match download_err {
             DownloadError::Network(err) => RequestError::Network(err),
             DownloadError::Io(err) => RequestError::Io(err),
+            DownloadError::HttpStatus(status) => RequestError::HttpStatus(status),
         }
     }
 }
 
-impl From<reqwest::Error> for DownloadError {
-    fn from(error: reqwest::Error) -> Self {
+impl From<cyper::Error> for DownloadError {
+    fn from(error: cyper::Error) -> Self {
         DownloadError::Network(Arc::new(hide_token(error)))
     }
 }
@@ -796,17 +805,17 @@ impl From<std::io::Error> for DownloadError {
     }
 }
 
-impl From<reqwest::Error> for RequestError {
-    fn from(error: reqwest::Error) -> Self {
+impl From<cyper::Error> for RequestError {
+    fn from(error: cyper::Error) -> Self {
         RequestError::Network(Arc::new(hide_token(error)))
     }
 }
 
 /// Replaces token in the url in the error with `token:redacted` string.
-pub(crate) fn hide_token(mut error: reqwest::Error) -> reqwest::Error {
-    let url = match error.url_mut() {
-        Some(url) => url,
-        None => return error,
+pub(crate) fn hide_token(mut error: cyper::Error) -> cyper::Error {
+    let url = match &mut error {
+        cyper::Error::InvalidUrl(url) => url,
+        _ => return error,
     };
 
     if let Some(mut segments) = url.path_segments() {
@@ -849,11 +858,25 @@ pub(crate) fn hide_token(mut error: reqwest::Error) -> reqwest::Error {
     }
 
     // couldn't find token in the url, hide the whole url
-    error.without_url()
+    url.set_path("/token:redacted");
+    url.set_query(None);
+    url.set_fragment(None);
+    error
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn network_error_redacts_bot_and_local_api_paths() {
+        let token = "123456789:abcdefghijklmnopqrstuvwxyzABCDEFGHI";
+        for path in [format!("/bot{token}/GetMe"), format!("/file/bot{token}/test.bin"), format!("/local/bot{token}/GetMe")] {
+            let error = cyper::Error::InvalidUrl(format!("http://localhost{path}").parse().unwrap());
+            let error = super::RequestError::from(error);
+            assert!(!format!("{error:?}").contains(token));
+            assert!(!error.to_string().contains(token));
+        }
+    }
+
     #[test]
     fn custom_result() {
         use super::ApiError;

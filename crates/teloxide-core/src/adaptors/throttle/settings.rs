@@ -3,8 +3,8 @@ use std::pin::Pin;
 use futures::{future::ready, Future};
 
 // Required to not trigger `clippy::type-complexity` lint
-type BoxedFnMut<I, O> = Box<dyn FnMut(I) -> O + Send>;
-type BoxedFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+type BoxedFnMut<I, O> = Box<dyn FnMut(I) -> O>;
+type BoxedFuture = Pin<Box<dyn Future<Output = ()>>>;
 
 /// Settings used by [`Throttle`] adaptor.
 ///
@@ -62,8 +62,8 @@ impl Settings {
 
     pub fn on_queue_full<F, Fut>(mut self, mut val: F) -> Self
     where
-        F: FnMut(usize) -> Fut + Send + 'static,
-        Fut: Future<Output = ()> + Send + 'static,
+        F: FnMut(usize) -> Fut + 'static,
+        Fut: Future<Output = ()> + 'static,
     {
         self.on_queue_full = Box::new(move |pending| Box::pin(val(pending)));
         self

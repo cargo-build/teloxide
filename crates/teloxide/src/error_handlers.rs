@@ -1,7 +1,7 @@
 //! Convenient error handling.
 
-use futures::future::BoxFuture;
-use std::{convert::Infallible, fmt::Debug, future::Future, sync::Arc};
+use futures::future::LocalBoxFuture;
+use std::{convert::Infallible, fmt::Debug, future::Future, rc::Rc};
 
 /// An asynchronous handler of an error.
 ///
@@ -9,16 +9,16 @@ use std::{convert::Infallible, fmt::Debug, future::Future, sync::Arc};
 /// overview](crate::dispatching).
 pub trait ErrorHandler<E> {
     #[must_use]
-    fn handle_error(self: Arc<Self>, error: E) -> BoxFuture<'static, ()>;
+    fn handle_error(self: Rc<Self>, error: E) -> LocalBoxFuture<'static, ()>;
 }
 
 impl<E, F, Fut> ErrorHandler<E> for F
 where
-    F: Fn(E) -> Fut + Send + Sync + 'static,
-    E: Send + 'static,
-    Fut: Future<Output = ()> + Send,
+    F: Fn(E) -> Fut + 'static,
+    E: 'static,
+    Fut: Future<Output = ()> + 'static,
 {
-    fn handle_error(self: Arc<Self>, error: E) -> BoxFuture<'static, ()> {
+    fn handle_error(self: Rc<Self>, error: E) -> LocalBoxFuture<'static, ()> {
         Box::pin(async move { self(error).await })
     }
 }
@@ -29,7 +29,7 @@ where
 /// ```
 /// use teloxide::error_handlers::OnError;
 ///
-/// # #[tokio::main]
+/// # #[compio::main]
 /// # async fn main_() {
 /// // Prints nothing
 /// let ok: Result<i32, i32> = Ok(200);
@@ -45,7 +45,7 @@ where
 /// ```
 /// use teloxide::error_handlers::{IgnoringErrorHandler, OnError};
 ///
-/// # #[tokio::main]
+/// # #[compio::main]
 /// # async fn main_() {
 /// let err: Result<i32, i32> = Err(404);
 /// err.on_error(IgnoringErrorHandler::new()).await;
@@ -53,15 +53,15 @@ where
 /// ```
 pub trait OnError<E> {
     #[must_use]
-    fn on_error<'a, Eh>(self, eh: Arc<Eh>) -> BoxFuture<'a, ()>
+    fn on_error<'a, Eh>(self, eh: Rc<Eh>) -> LocalBoxFuture<'a, ()>
     where
         Self: 'a,
-        Eh: ErrorHandler<E> + Send + Sync,
-        Arc<Eh>: 'a;
+        Eh: ErrorHandler<E>,
+        Rc<Eh>: 'a;
 
     /// A shortcut for `.on_error(LoggingErrorHandler::new())`.
     #[must_use]
-    fn log_on_error<'a>(self) -> BoxFuture<'a, ()>
+    fn log_on_error<'a>(self) -> LocalBoxFuture<'a, ()>
     where
         Self: Sized + 'a,
         E: Debug,
@@ -70,16 +70,12 @@ pub trait OnError<E> {
     }
 }
 
-impl<T, E> OnError<E> for Result<T, E>
-where
-    T: Send,
-    E: Send,
-{
-    fn on_error<'a, Eh>(self, eh: Arc<Eh>) -> BoxFuture<'a, ()>
+impl<T, E> OnError<E> for Result<T, E> {
+    fn on_error<'a, Eh>(self, eh: Rc<Eh>) -> LocalBoxFuture<'a, ()>
     where
         Self: 'a,
-        Eh: ErrorHandler<E> + Send + Sync,
-        Arc<Eh>: 'a,
+        Eh: ErrorHandler<E>,
+        Rc<Eh>: 'a,
     {
         Box::pin(async move {
             if let Err(error) = self {
@@ -93,7 +89,7 @@ where
 ///
 /// ## Example
 /// ```
-/// # #[tokio::main]
+/// # #[compio::main]
 /// # async fn main_() {
 /// use teloxide::error_handlers::{ErrorHandler, IgnoringErrorHandler};
 ///
@@ -107,13 +103,13 @@ pub struct IgnoringErrorHandler;
 
 impl IgnoringErrorHandler {
     #[must_use]
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self)
+    pub fn new() -> Rc<Self> {
+        Rc::new(Self)
     }
 }
 
 impl<E> ErrorHandler<E> for IgnoringErrorHandler {
-    fn handle_error(self: Arc<Self>, _: E) -> BoxFuture<'static, ()> {
+    fn handle_error(self: Rc<Self>, _: E) -> LocalBoxFuture<'static, ()> {
         Box::pin(async {})
     }
 }
@@ -123,7 +119,7 @@ impl<E> ErrorHandler<E> for IgnoringErrorHandler {
 ///
 /// ## Examples
 /// ```
-/// # #[tokio::main]
+/// # #[compio::main]
 /// # async fn main_() {
 /// use std::convert::{Infallible, TryInto};
 ///
@@ -152,14 +148,14 @@ pub struct IgnoringErrorHandlerSafe;
 
 impl IgnoringErrorHandlerSafe {
     #[must_use]
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self)
+    pub fn new() -> Rc<Self> {
+        Rc::new(Self)
     }
 }
 
 #[allow(unreachable_code)]
 impl ErrorHandler<Infallible> for IgnoringErrorHandlerSafe {
-    fn handle_error(self: Arc<Self>, _: Infallible) -> BoxFuture<'static, ()> {
+    fn handle_error(self: Rc<Self>, _: Infallible) -> LocalBoxFuture<'static, ()> {
         Box::pin(async {})
     }
 }
@@ -168,7 +164,7 @@ impl ErrorHandler<Infallible> for IgnoringErrorHandlerSafe {
 ///
 /// ## Example
 /// ```
-/// # #[tokio::main]
+/// # #[compio::main]
 /// # async fn main_() {
 /// use teloxide::error_handlers::{ErrorHandler, LoggingErrorHandler};
 ///
@@ -186,17 +182,17 @@ impl LoggingErrorHandler {
     ///
     /// The logs will be printed in this format: `{text}: {:?}`.
     #[must_use]
-    pub fn with_custom_text<T>(text: T) -> Arc<Self>
+    pub fn with_custom_text<T>(text: T) -> Rc<Self>
     where
         T: Into<String>,
     {
-        Arc::new(Self { text: text.into() })
+        Rc::new(Self { text: text.into() })
     }
 
     /// A shortcut for
     /// `LoggingErrorHandler::with_custom_text("Error".to_owned())`.
     #[must_use]
-    pub fn new() -> Arc<Self> {
+    pub fn new() -> Rc<Self> {
         Self::with_custom_text("Error".to_owned())
     }
 }
@@ -205,7 +201,7 @@ impl<E> ErrorHandler<E> for LoggingErrorHandler
 where
     E: Debug,
 {
-    fn handle_error(self: Arc<Self>, error: E) -> BoxFuture<'static, ()> {
+    fn handle_error(self: Rc<Self>, error: E) -> LocalBoxFuture<'static, ()> {
         log::error!("{text}: {:?}", error, text = self.text);
         Box::pin(async {})
     }

@@ -6,10 +6,10 @@ use std::{
 };
 
 use futures::{
-    future::BoxFuture,
+    future::LocalBoxFuture,
     task::{Context, Poll},
 };
-use tokio::sync::mpsc;
+use async_channel as mpsc;
 
 use crate::{
     adaptors::throttle::{channel, ChatIdHash, FreezeUntil, RequestLock},
@@ -28,7 +28,7 @@ pub struct ThrottlingRequest<R: HasPayload> {
 
 /// Future returned by [`ThrottlingRequest`]s.
 #[pin_project::pin_project]
-pub struct ThrottlingSend<R: Request>(#[pin] BoxFuture<'static, Result<Output<R>, R::Err>>);
+pub struct ThrottlingSend<R: Request>(#[pin] LocalBoxFuture<'static, Result<Output<R>, R::Err>>);
 
 enum ShareableRequest<R> {
     Shared(Arc<R>),
@@ -52,9 +52,8 @@ impl<R: HasPayload + Clone> HasPayload for ThrottlingRequest<R> {
 
 impl<R> Request for ThrottlingRequest<R>
 where
-    R: Request + Clone + Send + Sync + 'static, // TODO: rem static
-    R::Err: AsResponseParameters + Send,
-    Output<R>: Send,
+    R: Request + Clone + 'static, // TODO: rem static
+    R::Err: AsResponseParameters,
 {
     type Err = R::Err;
     type Send = ThrottlingSend<R>;
@@ -82,9 +81,8 @@ where
 
 impl<R> IntoFuture for ThrottlingRequest<R>
 where
-    R: Request + Clone + Send + Sync + 'static,
-    R::Err: AsResponseParameters + Send,
-    Output<R>: Send,
+    R: Request + Clone + 'static,
+    R::Err: AsResponseParameters,
 {
     type Output = Result<Output<Self>, <Self as Request>::Err>;
     type IntoFuture = <Self as Request>::Send;
@@ -159,9 +157,8 @@ async fn send<R>(
     worker: mpsc::Sender<(ChatIdHash, RequestLock)>,
 ) -> Result<Output<R>, R::Err>
 where
-    R: Request + Send + Sync + 'static,
-    R::Err: AsResponseParameters + Send,
-    Output<R>: Send,
+    R: Request + 'static,
+    R::Err: AsResponseParameters,
 {
     // We use option in `ShareableRequest` to `take` when sending by value.
     //
@@ -212,7 +209,7 @@ where
 
             if retry {
                 log::warn!("Freezing, before retrying: {retry_after:?}");
-                tokio::time::sleep_until(until.into()).await;
+                compio::time::sleep_until(until.into()).await;
             }
         }
 

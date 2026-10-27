@@ -18,10 +18,10 @@ pub struct InlineQueryResultPhoto {
 
     /// A valid URL of the photo. Photo must be in **jpeg** format. Photo size
     /// must not exceed 5MB.
-    pub photo_url: reqwest::Url,
+    pub photo_url: url::Url,
 
     /// URL of the thumbnail for the photo.
-    pub thumbnail_url: reqwest::Url,
+    pub thumbnail_url: url::Url,
 
     /// Width of the photo.
     pub photo_width: Option<u32>,
@@ -64,7 +64,7 @@ pub struct InlineQueryResultPhoto {
 }
 
 impl InlineQueryResultPhoto {
-    pub fn new<S>(id: S, photo_url: reqwest::Url, thumbnail_url: reqwest::Url) -> Self
+    pub fn new<S>(id: S, photo_url: url::Url, thumbnail_url: url::Url) -> Self
     where
         S: Into<String>,
     {
@@ -94,13 +94,13 @@ impl InlineQueryResultPhoto {
     }
 
     #[must_use]
-    pub fn photo_url(mut self, val: reqwest::Url) -> Self {
+    pub fn photo_url(mut self, val: url::Url) -> Self {
         self.photo_url = val;
         self
     }
 
     #[must_use]
-    pub fn thumbnail_url<S>(mut self, val: reqwest::Url) -> Self {
+    pub fn thumbnail_url<S>(mut self, val: url::Url) -> Self {
         self.thumbnail_url = val;
         self
     }

@@ -5,33 +5,33 @@ use dptree::{
     prelude::DependencyMap,
     HandlerSignature,
 };
-use std::{collections::BTreeSet, sync::Arc};
+use std::{collections::BTreeSet, rc::Rc};
 use tracing::{Instrument, Span};
 
 pub trait UpdateHandlerTracingExt<E> {
     /// Returns an `UpdateHandler` wrapped in an async span.
     fn instrument_with_async<F, FnArgs>(self, f: F) -> Self
     where
-        F: Injectable<Span, FnArgs> + Send + Sync + 'static;
+        F: Injectable<Span, FnArgs> + 'static;
 
     /// Returns an `UpdateHandler` wrapped in a span.
     fn instrument_with<F, FnArgs>(self, f: F) -> Self
     where
-        Asyncify<F>: Injectable<Span, FnArgs> + Send + Sync + 'static;
+        Asyncify<F>: Injectable<Span, FnArgs> + 'static;
 }
 
 impl<E: 'static> UpdateHandlerTracingExt<E> for UpdateHandler<E> {
     fn instrument_with_async<F, FnArgs>(self, f: F) -> UpdateHandler<E>
     where
-        F: Injectable<Span, FnArgs> + Send + Sync + 'static,
+        F: Injectable<Span, FnArgs> + 'static,
     {
-        let f = Arc::new(f);
+        let f = Rc::new(f);
 
         dptree::from_fn_with_description(
             self.description().clone(),
             move |deps: DependencyMap, cont| {
                 let self_c = self.clone();
-                let f = Arc::clone(&f);
+                let f = Rc::clone(&f);
 
                 async move {
                     let f = f.inject(&deps);
@@ -52,7 +52,7 @@ impl<E: 'static> UpdateHandlerTracingExt<E> for UpdateHandler<E> {
 
     fn instrument_with<F, FnArgs>(self, f: F) -> Self
     where
-        Asyncify<F>: Injectable<Span, FnArgs> + Send + Sync + 'static,
+        Asyncify<F>: Injectable<Span, FnArgs> + 'static,
     {
         self.instrument_with_async(Asyncify(f))
     }

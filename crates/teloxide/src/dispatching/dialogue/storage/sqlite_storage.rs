@@ -1,19 +1,20 @@
-use super::{serializer::Serializer, Storage};
-use futures::future::BoxFuture;
-use serde::{de::DeserializeOwned, Serialize};
-use sqlx::{sqlite::SqlitePool, Executor};
 use std::{
     convert::Infallible,
     fmt::{Debug, Display},
-    str,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
+
+use futures::future::LocalBoxFuture;
+use rusqlite::{Connection, OptionalExtension};
+use serde::{de::DeserializeOwned, Serialize};
 use teloxide_core::types::ChatId;
 use thiserror::Error;
 
+use super::{serializer::Serializer, Storage};
+
 /// A persistent dialogue storage based on [SQLite](https://www.sqlite.org/).
 pub struct SqliteStorage<S> {
-    pool: SqlitePool,
+    connection: Arc<Mutex<Connection>>,
     serializer: S,
 }
 
@@ -27,7 +28,13 @@ where
     SerdeError(SE),
 
     #[error("sqlite error: {0}")]
-    SqliteError(#[from] sqlx::Error),
+    SqliteError(#[from] rusqlite::Error),
+
+    #[error("sqlite blocking operation failed: {0}")]
+    BlockingError(#[from] std::io::Error),
+
+    #[error("sqlite connection mutex was poisoned")]
+    PoisonedConnection,
 
     /// Returned from [`SqliteStorage::remove_dialogue`].
     #[error("row not found")]
@@ -35,52 +42,86 @@ where
 }
 
 impl<S> SqliteStorage<S> {
+    /// Opens a database and bootstraps the existing dialogue table if absent.
     pub async fn open(
         path: &str,
         serializer: S,
     ) -> Result<Arc<Self>, SqliteStorageError<Infallible>> {
-        let pool = SqlitePool::connect(format!("sqlite:{path}?mode=rwc").as_str()).await?;
-        sqlx::query(
-            "
-CREATE TABLE IF NOT EXISTS teloxide_dialogues (
-    chat_id BIGINT PRIMARY KEY,
-    dialogue BLOB NOT NULL
-);
-        ",
-        )
-        .execute(&pool)
-        .await?;
+        let path = path.to_owned();
+        let connection = compio::runtime::spawn_blocking(move || {
+            let connection = Connection::open(path)?;
+            connection.busy_timeout(std::time::Duration::from_secs(5))?;
+            connection.execute_batch(
+                "CREATE TABLE IF NOT EXISTS teloxide_dialogues (
+                    chat_id BIGINT PRIMARY KEY,
+                    dialogue BLOB NOT NULL
+                );",
+            )?;
+            Ok::<_, rusqlite::Error>(connection)
+        })
+        .await
+        .map_err(std::io::Error::from)??;
 
-        Ok(Arc::new(Self { pool, serializer }))
+        Ok(Arc::new(Self { connection: Arc::new(Mutex::new(connection)), serializer }))
+    }
+
+    async fn run<T>(
+        &self,
+        operation: impl FnOnce(&Connection) -> Result<T, rusqlite::Error> + Send + 'static,
+    ) -> Result<T, SqliteStorageError<Infallible>>
+    where
+        T: Send + 'static,
+    {
+        let connection = self.connection.clone();
+        compio::runtime::spawn_blocking(move || {
+            let connection =
+                connection.lock().map_err(|_| SqliteStorageError::PoisonedConnection)?;
+            operation(&connection).map_err(SqliteStorageError::SqliteError)
+        })
+        .await
+        .map_err(std::io::Error::from)?
+    }
+}
+
+impl<SE> SqliteStorageError<SE>
+where
+    SE: Debug + Display,
+{
+    fn from_operation(error: SqliteStorageError<Infallible>) -> Self {
+        match error {
+            SqliteStorageError::SerdeError(error) => match error {},
+            SqliteStorageError::SqliteError(error) => Self::SqliteError(error),
+            SqliteStorageError::BlockingError(error) => Self::BlockingError(error),
+            SqliteStorageError::PoisonedConnection => Self::PoisonedConnection,
+            SqliteStorageError::DialogueNotFound => Self::DialogueNotFound,
+        }
     }
 }
 
 impl<S, D> Storage<D> for SqliteStorage<S>
 where
-    S: Send + Sync + Serializer<D> + 'static,
-    D: Send + Serialize + DeserializeOwned + 'static,
+    S: Serializer<D> + 'static,
+    D: Serialize + DeserializeOwned + 'static,
     <S as Serializer<D>>::Error: Debug + Display,
 {
     type Error = SqliteStorageError<<S as Serializer<D>>::Error>;
 
-    /// Returns [`sqlx::Error::RowNotFound`] if a dialogue does not exist.
     fn remove_dialogue(
         self: Arc<Self>,
         ChatId(chat_id): ChatId,
-    ) -> BoxFuture<'static, Result<(), Self::Error>> {
+    ) -> LocalBoxFuture<'static, Result<(), Self::Error>> {
         Box::pin(async move {
-            let deleted_rows_count =
-                sqlx::query("DELETE FROM teloxide_dialogues WHERE chat_id = ?")
-                    .bind(chat_id)
-                    .execute(&self.pool)
-                    .await?
-                    .rows_affected();
-
-            if deleted_rows_count == 0 {
-                return Err(SqliteStorageError::DialogueNotFound);
+            let deleted = self
+                .run(move |connection| {
+                    connection
+                        .execute("DELETE FROM teloxide_dialogues WHERE chat_id = ?", [chat_id])
+                })
+                .await
+                .map_err(SqliteStorageError::from_operation)?;
+            match deleted {
+                0 => Err(SqliteStorageError::DialogueNotFound),
+                _ => Ok(()),
             }
-
-            Ok(())
         })
     }
 
@@ -88,57 +129,45 @@ where
         self: Arc<Self>,
         ChatId(chat_id): ChatId,
         dialogue: D,
-    ) -> BoxFuture<'static, Result<(), Self::Error>> {
+    ) -> LocalBoxFuture<'static, Result<(), Self::Error>> {
         Box::pin(async move {
-            let d = self.serializer.serialize(&dialogue).map_err(SqliteStorageError::SerdeError)?;
-
-            self.pool
-                .acquire()
-                .await?
-                .execute(
-                    sqlx::query(
-                        "
-            INSERT INTO teloxide_dialogues VALUES (?, ?)
-            ON CONFLICT(chat_id) DO UPDATE SET dialogue=excluded.dialogue
-                                ",
-                    )
-                    .bind(chat_id)
-                    .bind(d),
-                )
-                .await?;
-            Ok(())
+            let bytes =
+                self.serializer.serialize(&dialogue).map_err(SqliteStorageError::SerdeError)?;
+            self.run(move |connection| {
+                connection.execute(
+                    "INSERT INTO teloxide_dialogues VALUES (?, ?)
+                     ON CONFLICT(chat_id) DO UPDATE SET dialogue=excluded.dialogue",
+                    rusqlite::params![chat_id, bytes],
+                )?;
+                Ok(())
+            })
+            .await
+            .map_err(SqliteStorageError::from_operation)
         })
     }
 
     fn get_dialogue(
         self: Arc<Self>,
-        chat_id: ChatId,
-    ) -> BoxFuture<'static, Result<Option<D>, Self::Error>> {
+        ChatId(chat_id): ChatId,
+    ) -> LocalBoxFuture<'static, Result<Option<D>, Self::Error>> {
         Box::pin(async move {
-            get_dialogue(&self.pool, chat_id)
-                .await?
-                .map(|d| self.serializer.deserialize(&d).map_err(SqliteStorageError::SerdeError))
+            let bytes: Option<Vec<u8>> = self
+                .run(move |connection| {
+                    connection
+                        .query_row(
+                            "SELECT dialogue FROM teloxide_dialogues WHERE chat_id = ?",
+                            [chat_id],
+                            |row| row.get(0),
+                        )
+                        .optional()
+                })
+                .await
+                .map_err(SqliteStorageError::from_operation)?;
+            bytes
+                .map(|bytes| {
+                    self.serializer.deserialize(&bytes).map_err(SqliteStorageError::SerdeError)
+                })
                 .transpose()
         })
     }
-}
-
-async fn get_dialogue(
-    pool: &SqlitePool,
-    ChatId(chat_id): ChatId,
-) -> Result<Option<Vec<u8>>, sqlx::Error> {
-    #[derive(sqlx::FromRow)]
-    struct DialogueDbRow {
-        dialogue: Vec<u8>,
-    }
-
-    let bytes = sqlx::query_as::<_, DialogueDbRow>(
-        "SELECT dialogue FROM teloxide_dialogues WHERE chat_id = ?",
-    )
-    .bind(chat_id)
-    .fetch_optional(pool)
-    .await?
-    .map(|r| r.dialogue);
-
-    Ok(bytes)
 }

@@ -1,4 +1,4 @@
-use reqwest::Url;
+use url::Url;
 use serde::{Deserialize, Serialize};
 
 use crate::types::{LabeledPrice, LinkPreviewOptions, LivePeriod, MessageEntity, ParseMode};

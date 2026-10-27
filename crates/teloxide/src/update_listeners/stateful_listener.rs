@@ -60,7 +60,6 @@ impl<St, Assf, Sf, Hauf> StatefulListener<St, Assf, Sf, Hauf> {
 impl<'a, St, Assf, Sf, Hauf, Strm, E> AsUpdateStream<'a> for StatefulListener<St, Assf, Hauf, Sf>
 where
     (St, Strm): 'a,
-    Strm: Send,
     Assf: FnMut(&'a mut St) -> Strm,
     Strm: Stream<Item = Result<Update, E>>,
 {

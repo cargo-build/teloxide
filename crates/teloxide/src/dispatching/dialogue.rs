@@ -96,10 +96,10 @@
 #[cfg(feature = "redis-storage")]
 pub use self::{RedisStorage, RedisStorageError};
 
-#[cfg(any(feature = "sqlite-storage-nativetls", feature = "sqlite-storage-rustls"))]
+#[cfg(feature = "sqlite-storage")]
 pub use self::{SqliteStorage, SqliteStorageError};
 
-#[cfg(any(feature = "postgres-storage-nativetls", feature = "postgres-storage-rustls"))]
+#[cfg(feature = "postgres-storage")]
 pub use self::{PostgresStorage, PostgresStorageError};
 
 pub use get_chat_id::GetChatId;
@@ -141,7 +141,7 @@ where
 
 impl<D, S> Dialogue<D, S>
 where
-    D: Send + 'static,
+    D: 'static,
     S: Storage<D> + ?Sized,
 {
     /// Constructs a new dialogue with `storage` (where dialogues are stored)
@@ -225,11 +225,11 @@ where
 #[must_use]
 pub fn enter<Upd, S, D, Output>() -> Handler<'static, Output, DpHandlerDescription>
 where
-    S: Storage<D> + ?Sized + Send + Sync + 'static,
-    <S as Storage<D>>::Error: Debug + Send,
-    D: Default + Clone + Send + Sync + 'static,
-    Upd: GetChatId + Clone + Send + Sync + 'static,
-    Output: Send + Sync + 'static,
+    S: Storage<D> + ?Sized + 'static,
+    <S as Storage<D>>::Error: Debug,
+    D: Default + Clone + 'static,
+    Upd: GetChatId + Clone + 'static,
+    Output: 'static,
 {
     dptree::filter_map(|storage: Arc<S>, upd: Upd| {
         let chat_id = upd.chat_id()?;

@@ -3,7 +3,7 @@ use teloxide_core::{
     types::{DiceEmoji, Me, ParseMode},
 };
 
-#[tokio::main]
+#[compio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     pretty_env_logger::init();
 

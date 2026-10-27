@@ -1,0 +1,133 @@
+use crate::{
+    di::{Asyncify, Injectable},
+    from_fn_with_description, Handler, HandlerDescription, HandlerSignature, Type,
+};
+
+use std::{collections::BTreeSet, iter::FromIterator, ops::ControlFlow, rc::Rc};
+
+/// Constructs a handler that optionally passes a value of a new type further.
+///
+/// If the `proj` function returns `Some(v)` then `v` will be added to the
+/// container and passed further in a handler chain. If the function returns
+/// `None`, then the handler will return [`ControlFlow::Continue`] with the old
+/// container.
+#[must_use]
+#[track_caller]
+pub fn filter_map<'a, Projection, Output, NewType, Args, Descr>(
+    proj: Projection,
+) -> Handler<'a, Output, Descr>
+where
+    Asyncify<Projection>: Injectable<Option<NewType>, Args> + 'a,
+    Output: 'a,
+    Descr: HandlerDescription,
+    NewType: 'static,
+{
+    filter_map_with_description(Descr::filter_map(), proj)
+}
+
+/// The asynchronous version of [`filter_map`].
+#[must_use]
+#[track_caller]
+pub fn filter_map_async<'a, Projection, Output, NewType, Args, Descr>(
+    proj: Projection,
+) -> Handler<'a, Output, Descr>
+where
+    Projection: Injectable<Option<NewType>, Args> + 'a,
+    Output: 'a,
+    Descr: HandlerDescription,
+    NewType: 'static,
+{
+    filter_map_async_with_description(Descr::filter_map_async(), proj)
+}
+
+/// [`filter_map`] with a custom description.
+#[must_use]
+#[track_caller]
+pub fn filter_map_with_description<'a, Projection, Output, NewType, Args, Descr>(
+    description: Descr,
+    proj: Projection,
+) -> Handler<'a, Output, Descr>
+where
+    Asyncify<Projection>: Injectable<Option<NewType>, Args> + 'a,
+    Output: 'a,
+    NewType: 'static,
+{
+    filter_map_async_with_description(description, Asyncify(proj))
+}
+
+/// [`filter_map_async`] with a custom description.
+#[must_use]
+#[track_caller]
+pub fn filter_map_async_with_description<'a, Projection, Output, NewType, Args, Descr>(
+    description: Descr,
+    proj: Projection,
+) -> Handler<'a, Output, Descr>
+where
+    Projection: Injectable<Option<NewType>, Args> + 'a,
+    Output: 'a,
+    NewType: 'static,
+{
+    let proj = Rc::new(proj);
+
+    from_fn_with_description(
+        description,
+        move |container, cont| {
+            let proj = Rc::clone(&proj);
+
+            async move {
+                let proj = proj.inject(&container);
+                let res = proj().await;
+                std::mem::drop(proj);
+
+                match res {
+                    Some(new_type) => {
+                        let mut intermediate = container.clone();
+                        intermediate.insert(new_type);
+                        match cont(intermediate).await {
+                            ControlFlow::Continue(_) => ControlFlow::Continue(container),
+                            ControlFlow::Break(result) => ControlFlow::Break(result),
+                        }
+                    }
+                    None => ControlFlow::Continue(container),
+                }
+            }
+        },
+        HandlerSignature::Other {
+            obligations: Projection::obligations(),
+            guaranteed_outcomes: BTreeSet::from_iter(vec![Type::of::<NewType>()]),
+            conditional_outcomes: BTreeSet::default(),
+            continues: true,
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{deps, help_inference};
+
+    #[compio::test]
+    async fn test_some() {
+        let value = 123;
+
+        let result = help_inference(filter_map(move || Some(value)))
+            .endpoint(move |event: i32| async move {
+                assert_eq!(event, value);
+                value
+            })
+            .dispatch(deps![])
+            .await;
+
+        assert!(result == ControlFlow::Break(value));
+    }
+
+    #[compio::test]
+    async fn test_none() {
+        let result = help_inference(filter_map(|| None::<i32>))
+            .endpoint(|| async move { unreachable!() })
+            .dispatch(deps![])
+            .await;
+
+        assert!(result == ControlFlow::Continue(crate::deps![]));
+    }
+}

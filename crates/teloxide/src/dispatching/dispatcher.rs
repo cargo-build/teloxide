@@ -13,11 +13,10 @@ use crate::{
 use dptree::di::DependencyMap;
 use either::Either;
 use futures::{
-    future::{self, BoxFuture},
+    future::{self, LocalBoxFuture},
     stream::FuturesUnordered,
     FutureExt as _, StreamExt as _,
 };
-use tokio_stream::wrappers::ReceiverStream;
 
 use std::{
     collections::HashMap,
@@ -26,10 +25,8 @@ use std::{
     hash::Hash,
     ops::{ControlFlow, Deref},
     pin::pin,
-    sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
-        Arc,
-    },
+    rc::Rc,
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
 };
 
 /// The builder for [`Dispatcher`].
@@ -39,9 +36,9 @@ use std::{
 pub struct DispatcherBuilder<R, Err, Key> {
     bot: R,
     dependencies: DependencyMap,
-    handler: Arc<UpdateHandler<Err>>,
+    handler: Rc<UpdateHandler<Err>>,
     default_handler: DefaultHandler,
-    error_handler: Arc<dyn ErrorHandler<Err> + Send + Sync>,
+    error_handler: Rc<dyn ErrorHandler<Err>>,
     ctrlc_handler: bool,
     distribution_f: fn(&Update) -> Option<Key>,
     worker_queue_size: usize,
@@ -49,8 +46,8 @@ pub struct DispatcherBuilder<R, Err, Key> {
 
 impl<R, Err, Key> DispatcherBuilder<R, Err, Key>
 where
-    R: Clone + Requester + Clone + Send + Sync + 'static,
-    Err: Debug + Send + Sync + 'static,
+    R: Clone + Requester + 'static,
+    Err: Debug + 'static,
 {
     /// Specifies a handler that will be called for an unhandled update.
     ///
@@ -58,14 +55,14 @@ where
     #[must_use]
     pub fn default_handler<H, Fut>(self, handler: H) -> Self
     where
-        H: Fn(Arc<Update>) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = ()> + Send + 'static,
+        H: Fn(Rc<Update>) -> Fut + 'static,
+        Fut: Future<Output = ()> + 'static,
     {
-        let handler = Arc::new(handler);
+        let handler = Rc::new(handler);
 
         Self {
-            default_handler: Arc::new(move |upd| {
-                let handler = Arc::clone(&handler);
+            default_handler: Rc::new(move |upd| {
+                let handler = Rc::clone(&handler);
                 Box::pin(handler(upd))
             }),
             ..self
@@ -76,7 +73,7 @@ where
     ///
     /// By default, it is [`LoggingErrorHandler`].
     #[must_use]
-    pub fn error_handler(self, handler: Arc<dyn ErrorHandler<Err> + Send + Sync>) -> Self {
+    pub fn error_handler(self, handler: Rc<dyn ErrorHandler<Err>>) -> Self {
         Self { error_handler: handler, ..self }
     }
 
@@ -275,27 +272,27 @@ pub struct Dispatcher<R, Err, Key> {
     bot: R,
     dependencies: DependencyMap,
 
-    handler: Arc<UpdateHandler<Err>>,
+    handler: Rc<UpdateHandler<Err>>,
     default_handler: DefaultHandler,
 
     distribution_f: fn(&Update) -> Option<Key>,
     worker_queue_size: usize,
-    current_number_of_active_workers: Arc<AtomicU32>,
-    max_number_of_active_workers: Arc<AtomicU32>,
-    // Tokio TX channel parts associated with chat IDs that consume updates sequentially.
+    current_number_of_active_workers: Rc<AtomicU32>,
+    max_number_of_active_workers: Rc<AtomicU32>,
+    // Channel sender parts associated with chat IDs that consume updates sequentially.
     workers: HashMap<Key, Worker>,
-    // The default TX part that consume updates concurrently.
+    // The default sender part that consumes updates concurrently.
     default_worker: Option<Worker>,
 
-    error_handler: Arc<dyn ErrorHandler<Err> + Send + Sync>,
+    error_handler: Rc<dyn ErrorHandler<Err>>,
 
     state: ShutdownToken,
 }
 
 struct Worker {
-    tx: tokio::sync::mpsc::Sender<Update>,
-    handle: tokio::task::JoinHandle<()>,
-    is_waiting: Arc<AtomicBool>,
+    tx: async_channel::Sender<Update>,
+    handle: compio::runtime::JoinHandle<()>,
+    is_waiting: Rc<AtomicBool>,
 }
 
 // TODO: it is allowed to return message as response on telegram request in
@@ -304,26 +301,23 @@ struct Worker {
 /// A handler that processes updates from Telegram.
 pub type UpdateHandler<Err> = dptree::Handler<'static, Result<(), Err>, DpHandlerDescription>;
 
-type DefaultHandler = Arc<dyn Fn(Arc<Update>) -> BoxFuture<'static, ()> + Send + Sync>;
+type DefaultHandler = Rc<dyn Fn(Rc<Update>) -> LocalBoxFuture<'static, ()>>;
 
 impl<R, Err> Dispatcher<R, Err, DefaultKey>
 where
-    R: Requester + Clone + Send + Sync + 'static,
-    Err: Send + Sync + 'static,
+    R: Requester + Clone + 'static,
+    Err: Debug,
 {
     /// Constructs a new [`DispatcherBuilder`] with `bot` and `handler`.
     #[must_use]
-    pub fn builder(bot: R, handler: UpdateHandler<Err>) -> DispatcherBuilder<R, Err, DefaultKey>
-    where
-        Err: Debug,
-    {
+    pub fn builder(bot: R, handler: UpdateHandler<Err>) -> DispatcherBuilder<R, Err, DefaultKey> {
         const DEFAULT_WORKER_QUEUE_SIZE: usize = 64;
 
         DispatcherBuilder {
             bot,
             dependencies: DependencyMap::new(),
-            handler: Arc::new(handler),
-            default_handler: Arc::new(|upd| {
+            handler: Rc::new(handler),
+            default_handler: Rc::new(|upd| {
                 log::warn!("Unhandled update: {upd:?}");
                 Box::pin(async {})
             }),
@@ -337,9 +331,8 @@ where
 
 impl<R, Err, Key> Dispatcher<R, Err, Key>
 where
-    R: Requester + Clone + Send + Sync + 'static,
-    Err: Send + Sync + 'static,
-    Key: Hash + Eq + Clone + Send,
+    R: Clone + Requester + 'static,
+    Err: 'static,
 {
     /// Starts your bot with the default parameters.
     ///
@@ -358,7 +351,6 @@ where
     pub async fn dispatch(&mut self)
     where
         R: Requester + Clone,
-        <R as Requester>::GetUpdates: Send,
     {
         let listener = update_listeners::polling_default(self.bot.clone()).await;
         let error_handler =
@@ -374,10 +366,10 @@ where
     pub async fn dispatch_with_listener<'a, UListener, Eh>(
         &'a mut self,
         update_listener: UListener,
-        update_listener_error_handler: Arc<Eh>,
+        update_listener_error_handler: Rc<Eh>,
     ) where
-        UListener: UpdateListener + Send + 'a,
-        Eh: ErrorHandler<UListener::Err> + Send + Sync + 'a,
+        UListener: UpdateListener + 'a,
+        Eh: ErrorHandler<UListener::Err> + 'a,
         UListener::Err: Debug,
     {
         self.try_dispatch_with_listener(update_listener, update_listener_error_handler)
@@ -395,11 +387,11 @@ where
     pub async fn try_dispatch_with_listener<'a, UListener, Eh>(
         &'a mut self,
         mut update_listener: UListener,
-        update_listener_error_handler: Arc<Eh>,
+        update_listener_error_handler: Rc<Eh>,
     ) -> Result<(), R::Err>
     where
-        UListener: UpdateListener + Send + 'a,
-        Eh: ErrorHandler<UListener::Err> + Send + Sync + 'a,
+        UListener: UpdateListener + 'a,
+        Eh: ErrorHandler<UListener::Err> + 'a,
         UListener::Err: Debug,
     {
         // FIXME: there should be a way to check if dependency is already inserted
@@ -417,11 +409,17 @@ where
 
         Ok(())
     }
+}
 
+impl<R, Err, Key> Dispatcher<R, Err, Key>
+where
+    Err: 'static,
+    Key: Hash + Eq + Clone,
+{
     async fn start_listening<'a, UListener, Eh>(
         &'a mut self,
         mut update_listener: UListener,
-        update_listener_error_handler: Arc<Eh>,
+        update_listener_error_handler: Rc<Eh>,
         mut stop_token: Option<StopToken>,
     ) where
         UListener: UpdateListener + 'a,
@@ -431,10 +429,15 @@ where
         self.state.start_dispatching();
 
         let stream = update_listener.as_stream();
-        tokio::pin!(stream);
+        let mut stream = pin!(stream);
 
         loop {
             self.remove_inactive_workers_if_needed().await;
+            if self.state.is_shutting_down() {
+                if let Some(token) = stop_token.take() {
+                    token.stop();
+                }
+            }
 
             let res = future::select(stream.next(), pin!(self.state.wait_for_changes()))
                 .map(either)
@@ -473,7 +476,7 @@ where
     async fn process_update<LErr, LErrHandler>(
         &mut self,
         update: Result<Update, LErr>,
-        err_handler: &Arc<LErrHandler>,
+        err_handler: &Rc<LErrHandler>,
     ) where
         LErrHandler: ErrorHandler<LErr>,
     {
@@ -491,25 +494,25 @@ where
                 let worker = match (self.distribution_f)(&upd) {
                     Some(key) => self.workers.entry(key).or_insert_with(|| {
                         let deps = self.dependencies.clone();
-                        let handler = Arc::clone(&self.handler);
-                        let default_handler = Arc::clone(&self.default_handler);
-                        let error_handler = Arc::clone(&self.error_handler);
+                        let handler = Rc::clone(&self.handler);
+                        let default_handler = Rc::clone(&self.default_handler);
+                        let error_handler = Rc::clone(&self.error_handler);
 
                         spawn_worker(
                             deps,
                             handler,
                             default_handler,
                             error_handler,
-                            Arc::clone(&self.current_number_of_active_workers),
-                            Arc::clone(&self.max_number_of_active_workers),
+                            Rc::clone(&self.current_number_of_active_workers),
+                            Rc::clone(&self.max_number_of_active_workers),
                             self.worker_queue_size,
                         )
                     }),
                     None => self.default_worker.get_or_insert_with(|| {
                         let deps = self.dependencies.clone();
-                        let handler = Arc::clone(&self.handler);
-                        let default_handler = Arc::clone(&self.default_handler);
-                        let error_handler = Arc::clone(&self.error_handler);
+                        let handler = Rc::clone(&self.handler);
+                        let default_handler = Rc::clone(&self.default_handler);
+                        let error_handler = Rc::clone(&self.error_handler);
 
                         spawn_default_worker(
                             deps,
@@ -544,8 +547,7 @@ where
             .workers
             .iter()
             .filter(|(_, worker)| {
-                worker.tx.capacity() == self.worker_queue_size
-                    && worker.is_waiting.load(Ordering::Relaxed)
+                worker.tx.is_empty() && worker.is_waiting.load(Ordering::Relaxed)
             })
             .map(|(k, _)| k)
             .cloned()
@@ -580,9 +582,9 @@ impl<R, Err, Key> Dispatcher<R, Err, Key> {
     #[cfg(feature = "ctrlc_handler")]
     fn setup_ctrlc_handler_inner(&mut self) {
         let token = self.state.clone();
-        tokio::spawn(async move {
+        let handle = compio::runtime::spawn(async move {
             loop {
-                tokio::signal::ctrl_c().await.expect("Failed to listen for ^C");
+                compio::signal::ctrl_c().await.expect("Failed to listen for ^C");
 
                 match token.shutdown() {
                     Ok(f) => {
@@ -596,39 +598,42 @@ impl<R, Err, Key> Dispatcher<R, Err, Key> {
                 }
             }
         });
+        // The signal listener intentionally outlives this handle: dropping a
+        // compio JoinHandle cancels the task.
+        handle.detach();
     }
 }
 
 fn spawn_worker<Err>(
     deps: DependencyMap,
-    handler: Arc<UpdateHandler<Err>>,
+    handler: Rc<UpdateHandler<Err>>,
     default_handler: DefaultHandler,
-    error_handler: Arc<dyn ErrorHandler<Err> + Send + Sync>,
-    current_number_of_active_workers: Arc<AtomicU32>,
-    max_number_of_active_workers: Arc<AtomicU32>,
+    error_handler: Rc<dyn ErrorHandler<Err>>,
+    current_number_of_active_workers: Rc<AtomicU32>,
+    max_number_of_active_workers: Rc<AtomicU32>,
     queue_size: usize,
 ) -> Worker
 where
-    Err: Send + Sync + 'static,
+    Err: 'static,
 {
-    let (tx, mut rx) = tokio::sync::mpsc::channel(queue_size);
-    let is_waiting = Arc::new(AtomicBool::new(true));
-    let is_waiting_local = Arc::clone(&is_waiting);
+    let (tx, rx) = async_channel::bounded(queue_size);
+    let is_waiting = Rc::new(AtomicBool::new(true));
+    let is_waiting_local = Rc::clone(&is_waiting);
 
-    let deps = Arc::new(deps);
+    let deps = Rc::new(deps);
 
-    let handle = tokio::spawn(async move {
-        while let Some(update) = rx.recv().await {
+    let handle = compio::runtime::spawn(async move {
+        while let Ok(update) = rx.recv().await {
             is_waiting_local.store(false, Ordering::Relaxed);
             {
                 let current = current_number_of_active_workers.fetch_add(1, Ordering::Relaxed) + 1;
                 max_number_of_active_workers.fetch_max(current, Ordering::Relaxed);
             }
 
-            let deps = Arc::clone(&deps);
-            let handler = Arc::clone(&handler);
-            let default_handler = Arc::clone(&default_handler);
-            let error_handler = Arc::clone(&error_handler);
+            let deps = Rc::clone(&deps);
+            let handler = Rc::clone(&handler);
+            let default_handler = Rc::clone(&default_handler);
+            let error_handler = Rc::clone(&error_handler);
 
             handle_update(update, deps, handler, default_handler, error_handler).await;
 
@@ -642,44 +647,44 @@ where
 
 fn spawn_default_worker<Err>(
     deps: DependencyMap,
-    handler: Arc<UpdateHandler<Err>>,
+    handler: Rc<UpdateHandler<Err>>,
     default_handler: DefaultHandler,
-    error_handler: Arc<dyn ErrorHandler<Err> + Send + Sync>,
+    error_handler: Rc<dyn ErrorHandler<Err>>,
     queue_size: usize,
 ) -> Worker
 where
-    Err: Send + Sync + 'static,
+    Err: 'static,
 {
-    let (tx, rx) = tokio::sync::mpsc::channel(queue_size);
+    let (tx, rx) = async_channel::bounded(queue_size);
 
-    let deps = Arc::new(deps);
+    let deps = Rc::new(deps);
 
-    let handle = tokio::spawn(ReceiverStream::new(rx).for_each_concurrent(None, move |update| {
-        let deps = Arc::clone(&deps);
-        let handler = Arc::clone(&handler);
-        let default_handler = Arc::clone(&default_handler);
-        let error_handler = Arc::clone(&error_handler);
+    let handle = compio::runtime::spawn(rx.for_each_concurrent(None, move |update| {
+        let deps = Rc::clone(&deps);
+        let handler = Rc::clone(&handler);
+        let default_handler = Rc::clone(&default_handler);
+        let error_handler = Rc::clone(&error_handler);
 
         handle_update(update, deps, handler, default_handler, error_handler)
     }));
 
-    Worker { tx, handle, is_waiting: Arc::new(AtomicBool::new(true)) }
+    Worker { tx, handle, is_waiting: Rc::new(AtomicBool::new(true)) }
 }
 
 async fn handle_update<Err>(
     update: Update,
-    deps: Arc<DependencyMap>,
-    handler: Arc<UpdateHandler<Err>>,
+    deps: Rc<DependencyMap>,
+    handler: Rc<UpdateHandler<Err>>,
     default_handler: DefaultHandler,
-    error_handler: Arc<dyn ErrorHandler<Err> + Send + Sync>,
+    error_handler: Rc<dyn ErrorHandler<Err>>,
 ) where
-    Err: Send + Sync + 'static,
+    Err: 'static,
 {
     let mut deps = deps.deref().clone();
     deps.insert(update);
 
     match handler.dispatch(deps).await {
-        ControlFlow::Break(Ok(())) => {}
+        ControlFlow::Break(Ok(())) => (),
         ControlFlow::Break(Err(err)) => error_handler.clone().handle_error(err).await,
         ControlFlow::Continue(deps) => {
             let update = deps.get();
@@ -696,24 +701,277 @@ fn either<L, R>(x: future::Either<L, R>) -> Either<L, R> {
 }
 #[cfg(test)]
 mod tests {
-    use std::convert::Infallible;
+    use std::{
+        cell::{Cell, RefCell},
+        collections::VecDeque,
+        convert::Infallible,
+        pin::Pin,
+        task::{self, Poll},
+        time::Duration,
+    };
 
-    use teloxide_core::Bot;
+    use chrono::DateTime;
+    use futures::Stream;
+    use teloxide_core::types::{
+        Chat, ChatId, ChatKind, ChatPrivate, LinkPreviewOptions, MediaKind, MediaText, Message,
+        MessageCommon, MessageId, MessageKind, Update, UpdateId, UpdateKind, User, UserId,
+    };
 
     use super::*;
+    use crate::{error_handlers::IgnoringErrorHandler, stop::mk_stop_token, update_listeners::AsUpdateStream};
 
-    #[tokio::test]
-    async fn test_tokio_spawn() {
-        tokio::spawn(async {
-            // Just check that this code compiles.
-            if false {
-                Dispatcher::<_, Infallible, _>::builder(Bot::new(""), dptree::entry())
-                    .build()
-                    .dispatch()
-                    .await;
-            }
-        })
-        .await
-        .unwrap();
+    /// An update listener that yields a scripted list of updates and keeps
+    /// pending forever until its stop token is used.
+    struct ScriptedListener {
+        updates: VecDeque<Update>,
+        flag: crate::stop::StopFlag,
+        token: StopToken,
     }
+
+    impl crate::update_listeners::UpdateListener for ScriptedListener {
+        type Err = Infallible;
+
+        fn stop_token(&mut self) -> StopToken {
+            self.token.clone()
+        }
+    }
+
+    impl<'a> AsUpdateStream<'a> for ScriptedListener {
+        type StreamErr = Infallible;
+        type Stream = ScriptedStream;
+
+        fn as_stream(&mut self) -> Self::Stream {
+            ScriptedStream {
+                updates: std::mem::take(&mut self.updates),
+                flag: self.flag.clone(),
+            }
+        }
+    }
+
+    struct ScriptedStream {
+        updates: VecDeque<Update>,
+        flag: crate::stop::StopFlag,
+    }
+
+    impl Stream for ScriptedStream {
+        type Item = Result<Update, Infallible>;
+
+        fn poll_next(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
+            let this = self.get_mut();
+
+            if let Some(upd) = this.updates.pop_front() {
+                return Poll::Ready(Some(Ok(upd)));
+            }
+
+            // End the stream only after the stop flag is raised.
+            if Pin::new(&mut this.flag).poll(cx).is_ready() {
+                Poll::Ready(None)
+            } else {
+                Poll::Pending
+            }
+        }
+    }
+
+    fn make_update(chat_id: i64, update_id: i64, text: String) -> Update {
+        let date = DateTime::from_timestamp(1_569_518_829, 0).unwrap();
+        Update {
+            id: UpdateId(update_id),
+            kind: UpdateKind::Message(Message {
+                via_bot: None,
+                id: MessageId(update_id.try_into().unwrap()),
+                thread_id: None,
+                from: Some(User {
+                    id: UserId(109_998_024),
+                    is_bot: false,
+                    first_name: String::from("Laster"),
+                    last_name: None,
+                    username: Some(String::from("laster_alex")),
+                    language_code: Some(String::from("en")),
+                    is_premium: false,
+                    added_to_attachment_menu: false,
+                }),
+                sender_chat: None,
+                is_topic_message: false,
+                is_paid_post: false,
+                suggested_post_info: None,
+                sender_business_bot: None,
+                date,
+                chat: Chat {
+                    id: ChatId(chat_id),
+                    kind: ChatKind::Private(ChatPrivate {
+                        username: Some(String::from("Laster")),
+                        first_name: Some(String::from("laster_alex")),
+                        last_name: None,
+                    }),
+                },
+                direct_messages_topic: None,
+                kind: MessageKind::Common(MessageCommon {
+                    reply_to_message: None,
+                    forward_origin: None,
+                    external_reply: None,
+                    quote: None,
+                    edit_date: None,
+                    media_kind: MediaKind::Text(MediaText {
+                        text,
+                        entities: vec![],
+                        link_preview_options: Some(LinkPreviewOptions {
+                            is_disabled: true,
+                            url: None,
+                            prefer_small_media: false,
+                            prefer_large_media: false,
+                            show_above_text: false,
+                        }),
+                    }),
+                    reply_markup: None,
+                    author_signature: None,
+                    paid_star_count: None,
+                    effect_id: None,
+                    is_automatic_forward: false,
+                    has_protected_content: false,
+                    reply_to_checklist_task_id: None,
+                    reply_to_story: None,
+                    sender_boost_count: None,
+                    is_from_offline: false,
+                    business_connection_id: None,
+                }),
+            }),
+        }
+    }
+
+    // Updates from one distribution key (chat) must be processed sequentially,
+    // while updates from different keys run concurrently; a shutdown must
+    // drain all updates already queued to workers.
+    #[compio::test]
+    async fn dispatcher_preserves_per_key_ordering_and_drains_on_stop() {
+        let chat_a = ChatId(1);
+        let chat_b = ChatId(2);
+        // Interleaved updates: A1, B1, A2, B2, A3, B3 (by update id).
+        let updates = vec![
+            make_update(chat_a.0, 1, "a1".to_owned()),
+            make_update(chat_b.0, 2, "b1".to_owned()),
+            make_update(chat_a.0, 3, "a2".to_owned()),
+            make_update(chat_b.0, 4, "b2".to_owned()),
+            make_update(chat_a.0, 5, "a3".to_owned()),
+            make_update(chat_b.0, 6, "b3".to_owned()),
+        ];
+        let total = updates.len();
+
+        let (token, flag) = mk_stop_token();
+        let mut listener = ScriptedListener { updates: updates.into(), flag, token };
+
+        // The handler state is deliberately non-`Send` (`Rc`): the dispatcher
+        // must accept local handlers.
+        let processed = Rc::new(RefCell::new(Vec::<(ChatId, i64)>::new()));
+        let started = Rc::new(Cell::new(0usize));
+
+        let state = ShutdownToken::new();
+        let handler_state = state.clone();
+        let handler_processed = Rc::clone(&processed);
+        let handler_started = Rc::clone(&started);
+        let handler: UpdateHandler<Infallible> = dptree::entry().endpoint(move |upd: Update| {
+            let processed = Rc::clone(&handler_processed);
+            let started = Rc::clone(&handler_started);
+            let state = handler_state.clone();
+            async move {
+                started.set(started.get() + 1);
+                if started.get() == 1 {
+                    let _done = state.shutdown().unwrap();
+                }
+                // Give other workers a chance to run concurrently.
+                compio::time::sleep(Duration::from_millis(10)).await;
+                let chat = upd.chat().expect("test updates carry a chat");
+                processed.borrow_mut().push((chat.id, upd.id.0));
+                Ok(())
+            }
+        });
+
+        let mut dp = Dispatcher {
+            bot: (),
+            dependencies: DependencyMap::new(),
+            handler: Rc::new(handler),
+            default_handler: Rc::new(|upd| {
+                log::warn!("Unhandled update: {upd:?}");
+                Box::pin(async {})
+            }),
+            error_handler: IgnoringErrorHandler::new(),
+            state,
+            distribution_f: default_distribution_function,
+            worker_queue_size: 1,
+            workers: HashMap::new(),
+            default_worker: None,
+            current_number_of_active_workers: Rc::new(AtomicU32::new(0)),
+            max_number_of_active_workers: Rc::new(AtomicU32::new(0)),
+        };
+
+        let shutdown_token = dp.shutdown_token();
+        let stop_token = listener.stop_token();
+
+        // Shutdown begins inside a handler while the dispatcher is applying
+        // queue backpressure, before its next notification listener exists.
+        let supervisor = compio::runtime::spawn(async move {
+            while started.get() < 2 {
+                compio::time::sleep(Duration::from_millis(1)).await;
+            }
+
+            let done = shutdown_token.shutdown().expect("dispatcher must be running");
+            done.await;
+        });
+
+        compio::time::timeout(Duration::from_secs(2),
+            dp.start_listening(listener, IgnoringErrorHandler::new(), Some(stop_token)))
+            .await.expect("dispatcher must stop even if the shutdown notification preceded its wait");
+        supervisor.await.expect("supervisor task failed");
+
+        let processed = processed.borrow();
+        assert_eq!(processed.len(), total, "drain on stop must process queued updates");
+
+        for chat in [chat_a, chat_b] {
+            let ids: Vec<i64> =
+                processed.iter().filter(|(c, _)| *c == chat).map(|(_, id)| *id).collect();
+            assert_eq!(ids.len(), 3, "each chat must see all of its updates");
+            assert!(
+                ids.windows(2).all(|w| w[0] < w[1]),
+                "updates of one distribution key must be processed sequentially: {ids:?}"
+            );
+        }
+    }
+
+    #[compio::test]
+    async fn unkeyed_worker_runs_local_handlers_concurrently_and_drains() {
+        let (started, wait_started) = async_channel::unbounded();
+        let (release, wait_release) = async_channel::unbounded();
+        let completed = Rc::new(Cell::new(0));
+        let counter = completed.clone();
+        let handler: UpdateHandler<Infallible> = dptree::entry().endpoint(move || {
+            let started = started.clone();
+            let wait_release = wait_release.clone();
+            let completed = counter.clone();
+            async move {
+                started.send(()).await.unwrap();
+                wait_release.recv().await.unwrap();
+                completed.set(completed.get() + 1);
+                Ok(())
+            }
+        });
+        let worker = spawn_default_worker(
+            DependencyMap::new(), Rc::new(handler), Rc::new(|_| Box::pin(async {})),
+            IgnoringErrorHandler::new(), 4,
+        );
+        for id in 1..=3 {
+            worker.tx.send(make_update(1, id, String::new())).await.unwrap();
+        }
+        compio::time::timeout(Duration::from_secs(2), async {
+            for _ in 0..3 {
+                wait_started.recv().await.unwrap();
+            }
+        }).await.expect("unkeyed handlers must all start before any completes");
+        assert_eq!(completed.get(), 0);
+        for _ in 0..3 {
+            release.send(()).await.unwrap();
+        }
+        drop(worker.tx);
+        compio::time::timeout(Duration::from_secs(2), worker.handle).await.unwrap().unwrap();
+        assert_eq!(completed.get(), 3);
+    }
+
 }

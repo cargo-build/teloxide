@@ -21,14 +21,14 @@
     <img src="https://img.shields.io/badge/official%20chat-t.me%2Fteloxide-blueviolet">
   </a>
 
-  The core part of [`teloxide`] providing tools for making requests to the [Telegram Bot API] with ease. This library is fully asynchronous and built using [`tokio`].
+  The core part of [`teloxide`] providing tools for making requests to the [Telegram Bot API] with ease. This library is fully asynchronous and built using [`compio`].
 </div>
 
 ```toml
-teloxide-core = "0.13.0"
+teloxide-core = { git = "https://github.com/cargo-build/teloxide" }
 ```
-_Compiler support: requires rustc 1.85+_.
+_Compiler support: requires rustc 1.99+_.
 
 [`teloxide`]: https://docs.rs/teloxide
 [Telegram Bot API]: https://core.telegram.org/bots/api
-[`tokio`]: https://tokio.rs
+[`compio`]: https://compio.rs

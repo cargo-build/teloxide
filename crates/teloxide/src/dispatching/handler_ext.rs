@@ -21,7 +21,7 @@ pub trait HandlerExt<Output> {
     #[must_use]
     fn filter_command<C>(self) -> Self
     where
-        C: BotCommands + Send + Sync + 'static;
+        C: BotCommands + 'static;
 
     /// Returns a handler that accepts a parsed command `C` if the command
     /// contains a bot mention, for example `/start@my_bot`.
@@ -33,7 +33,7 @@ pub trait HandlerExt<Output> {
     #[must_use]
     fn filter_mention_command<C>(self) -> Self
     where
-        C: BotCommands + Send + Sync + 'static;
+        C: BotCommands + 'static;
 
     /// Passes [`Dialogue<D, S>`] and `D` as handler dependencies.
     ///
@@ -61,36 +61,36 @@ pub trait HandlerExt<Output> {
     #[must_use]
     fn enter_dialogue<Upd, S, D>(self) -> Self
     where
-        S: Storage<D> + ?Sized + Send + Sync + 'static,
-        <S as Storage<D>>::Error: Debug + Send,
-        D: Default + Clone + Send + Sync + 'static,
-        Upd: GetChatId + Clone + Send + Sync + 'static;
+        S: Storage<D> + ?Sized + 'static,
+        <S as Storage<D>>::Error: Debug,
+        D: Default + Clone + 'static,
+        Upd: GetChatId + Clone + 'static;
 }
 
 impl<Output> HandlerExt<Output> for Handler<'static, Output, DpHandlerDescription>
 where
-    Output: Send + Sync + 'static,
+    Output: 'static,
 {
     fn filter_command<C>(self) -> Self
     where
-        C: BotCommands + Send + Sync + 'static,
+        C: BotCommands + 'static,
     {
         self.chain(filter_command::<C, Output>())
     }
 
     fn filter_mention_command<C>(self) -> Self
     where
-        C: BotCommands + Send + Sync + 'static,
+        C: BotCommands + 'static,
     {
         self.chain(filter_mention_command::<C, Output>())
     }
 
     fn enter_dialogue<Upd, S, D>(self) -> Self
     where
-        S: Storage<D> + ?Sized + Send + Sync + 'static,
-        <S as Storage<D>>::Error: Debug + Send,
-        D: Default + Clone + Send + Sync + 'static,
-        Upd: GetChatId + Clone + Send + Sync + 'static,
+        S: Storage<D> + ?Sized + 'static,
+        <S as Storage<D>>::Error: Debug,
+        D: Default + Clone + 'static,
+        Upd: GetChatId + Clone + 'static,
     {
         self.chain(super::dialogue::enter::<Upd, S, D, Output>())
     }
@@ -109,8 +109,8 @@ where
 #[must_use]
 pub fn filter_command<C, Output>() -> Handler<'static, Output, DpHandlerDescription>
 where
-    C: BotCommands + Send + Sync + 'static,
-    Output: Send + Sync + 'static,
+    C: BotCommands + 'static,
+    Output: 'static,
 {
     dptree::filter_map(move |message: Message, me: Me| {
         let bot_name = me.user.username.expect("Bots must have a username");
@@ -133,8 +133,8 @@ where
 #[must_use]
 pub fn filter_mention_command<C, Output>() -> Handler<'static, Output, DpHandlerDescription>
 where
-    C: BotCommands + Send + Sync + 'static,
-    Output: Send + Sync + 'static,
+    C: BotCommands + 'static,
+    Output: 'static,
 {
     dptree::filter_map(move |message: Message, me: Me| {
         let bot_name = me.user.username.expect("Bots must have a username");
@@ -259,7 +259,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[compio::test]
     async fn test_filter_command() {
         let h = dptree::entry()
             .branch(Update::filter_message().filter_command::<Cmd>().endpoint(|| async {}));
@@ -278,7 +278,7 @@ mod tests {
         assert!(result.is_break());
     }
 
-    #[tokio::test]
+    #[compio::test]
     async fn test_filter_mention_command() {
         let h = dptree::entry()
             .branch(Update::filter_message().filter_mention_command::<Cmd>().endpoint(|| async {}));

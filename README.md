@@ -23,6 +23,8 @@
   A full-featured framework that empowers you to easily build [Telegram bots](https://telegram.org/blog/bot-revolution) using [Rust](https://www.rust-lang.org/). It handles all the difficult stuff so you can focus only on your business logic.
 </div>
 
+This independent fork uses **compio** with io_uring on Linux and **Tako** for webhooks. It requires Rust **1.99+**. Requests, handlers and I/O resources stay on their compio executor thread; runtime-specific APIs differ from upstream. See [the migration guide](MIGRATION_GUIDE.md) before moving an existing Tokio bot.
+
 ## Highlights
 
  - **Declarative design.** `teloxide` is based upon [`dptree`], a functional [chain of responsibility] pattern that allows you to express pipelines of message processing in a highly declarative and extensible style.
@@ -59,7 +61,7 @@ $ set TELOXIDE_TOKEN=<Your token here>
 $ $env:TELOXIDE_TOKEN=<Your token here>
 ```
 
- 4. Make sure that your Rust compiler is up to date (`teloxide` currently requires rustc at least version 1.85):
+ 4. Make sure that your Rust compiler is up to date (`teloxide` currently requires rustc at least version 1.99):
 ```bash
 # If you're using stable
 $ rustup update stable
@@ -73,16 +75,16 @@ $ rustup override set nightly
  5. Run `cargo new my_bot`, enter the directory and put these lines into your `Cargo.toml`:
 ```toml
 [dependencies]
-teloxide = { version = "0.17.0", features = ["macros"] }
+teloxide = { git = "https://github.com/cargo-build/teloxide", features = ["macros"] }
 log = "0.4"
 pretty_env_logger = "0.5"
-tokio = { version =  "1.39", features = ["rt-multi-thread", "macros"] }
+compio = { version = "0.19.2", features = ["macros"] }
 ```
 
 _Note: if there is functionality in master that is not released yet, you can pull the Git repository as follows:_
 
 ```toml
-teloxide = { git = "https://github.com/teloxide/teloxide.git", features = ["macros"] }
+teloxide = { git = "https://github.com/cargo-build/teloxide.git", features = ["macros"] }
 ```
 
 ## API overview
@@ -96,7 +98,7 @@ This bot replies with a dice to each received message:
 ```rust,no_run
 use teloxide::prelude::*;
 
-#[tokio::main]
+#[compio::main]
 async fn main() {
     pretty_env_logger::init();
     log::info!("Starting throw dice bot...");
@@ -131,7 +133,7 @@ Commands are strongly typed and defined declaratively, similar to how we define 
 ```rust,no_run
 use teloxide::{prelude::*, utils::command::BotCommands};
 
-#[tokio::main]
+#[compio::main]
 async fn main() {
     pretty_env_logger::init();
     log::info!("Starting command bot...");
@@ -202,7 +204,7 @@ pub enum State {
     },
 }
 
-#[tokio::main]
+#[compio::main]
 async fn main() {
     pretty_env_logger::init();
     log::info!("Starting dialogue bot...");

@@ -1,13 +1,10 @@
-use std::{future::Future, sync::Arc};
+use std::{future::Future, time::{Duration, Instant}};
 
 use bytes::Bytes;
-use futures::{
-    future::{ready, Either},
-    stream::{once, unfold},
-    FutureExt, Stream, StreamExt,
-};
-use reqwest::{Client, Response, Url};
-use tokio::io::{AsyncWrite, AsyncWriteExt};
+use futures::{Stream, StreamExt, TryFutureExt};
+use cyper::Client;
+use compio::io::{AsyncWrite, AsyncWriteExt};
+use url::Url;
 
 use crate::{errors::DownloadError, net::file_url};
 
@@ -17,7 +14,7 @@ pub trait Download {
     type Err<'dst>;
 
     /// A future returned from [`download_file`](Self::download_file).
-    type Fut<'dst>: Future<Output = Result<(), Self::Err<'dst>>> + Send;
+    type Fut<'dst>: Future<Output = Result<(), Self::Err<'dst>>>;
 
     // NOTE: We currently only allow borrowing `dst` in the future,
     //       however we could also allow borrowing `self` or `path`.
@@ -42,24 +39,27 @@ pub trait Download {
     ///     types::{File, FileId},
     ///     Bot,
     /// };
-    /// use tokio::fs;
+    /// use compio::fs;
+    /// use std::io::Cursor;
     ///
     /// # async fn run() -> Result<(), Box<dyn std::error::Error>> {
     /// let bot = Bot::new("TOKEN");
     ///
     /// let file = bot.get_file(FileId("*file_id*".to_string())).await?;
-    /// let mut dst = fs::File::create("/tmp/test.png").await?;
+    /// let mut dst = Cursor::new(fs::File::create("/tmp/test.png").await?);
     /// bot.download_file(&file.path, &mut dst).await?;
     /// # Ok(()) }
     /// ```
     ///
     /// [`GetFile`]: crate::payloads::GetFile
     /// [`download_file_stream`]: Self::download_file_stream
-    fn download_file<'dst>(
+    fn download_file<'dst, W>(
         &self,
         path: &'dst str,
-        destination: &'dst mut (dyn AsyncWrite + Unpin + Send),
-    ) -> Self::Fut<'dst>;
+        destination: &'dst mut W,
+    ) -> Self::Fut<'dst>
+    where
+        W: AsyncWrite + ?Sized;
 
     /// An error returned from
     /// [`download_file_stream`](Self::download_file_stream).
@@ -68,18 +68,18 @@ pub trait Download {
     /// A stream returned from [`download_file_stream`].
     ///
     ///[`download_file_stream`]: (Self::download_file_stream)
-    type Stream: Stream<Item = Result<Bytes, Self::StreamErr>> + Send;
+    type Stream: Stream<Item = Result<Bytes, Self::StreamErr>>;
 
     /// Download a file from Telegram as [`Stream`].
     ///
     /// `path` can be obtained from the [`GetFile`].
     ///
-    /// To download into an [`AsyncWrite`] (e.g. [`tokio::fs::File`]), see
+    /// To download into an [`AsyncWrite`] (e.g. [`compio::fs::File`]), see
     /// [`download_file`].
     ///
     /// [`GetFile`]: crate::payloads::GetFile
-    /// [`AsyncWrite`]: tokio::io::AsyncWrite
-    /// [`tokio::fs::File`]: tokio::fs::File
+    /// [`AsyncWrite`]: compio::io::AsyncWrite
+    /// [`compio::fs::File`]: compio::fs::File
     /// [`download_file`]: Self::download_file
     fn download_file_stream(&self, path: &str) -> Self::Stream;
 }
@@ -94,20 +94,21 @@ pub fn download_file<'o, D>(
     api_url: Url,
     token: &str,
     path: &str,
+    timeout: Duration,
     dst: &'o mut D,
 ) -> impl Future<Output = Result<(), DownloadError>> + 'o
 where
-    D: ?Sized + AsyncWrite + Unpin,
+    D: ?Sized + AsyncWrite,
 {
-    client.get(file_url(api_url, token, path)).send().then(move |r| async move {
-        let mut res = r?.error_for_status()?;
-
-        while let Some(chunk) = res.chunk().await? {
-            dst.write_all(&chunk).await.map_err(Arc::new)?;
+    let stream = download_file_stream(client, api_url, token, path, timeout);
+    async move {
+        let mut stream = std::pin::pin!(stream);
+        while let Some(chunk) = stream.next().await {
+            let compio::BufResult(result, _) = dst.write_all(chunk?).await;
+            result?;
         }
-
         Ok(())
-    })
+    }
 }
 
 /// Download a file from Telegram as [`Stream`].
@@ -120,17 +121,53 @@ pub fn download_file_stream(
     api_url: Url,
     token: &str,
     path: &str,
-) -> impl Stream<Item = reqwest::Result<Bytes>> + 'static {
-    client.get(file_url(api_url, token, path)).send().into_stream().flat_map(|res| {
-        match res.and_then(Response::error_for_status) {
-            Ok(res) => Either::Left(unfold(res, |mut res| async {
-                match res.chunk().await {
-                    Err(err) => Some((Err(err), res)),
-                    Ok(Some(c)) => Some((Ok(c), res)),
-                    Ok(None) => None,
-                }
-            })),
-            Err(err) => Either::Right(once(ready(Err(err)))),
+    timeout: Duration,
+) -> impl Stream<Item = Result<Bytes, DownloadError>> + 'static {
+    let request = client.get(file_url(api_url, token, path));
+    async move {
+        let deadline = super::request_deadline(timeout, None)?;
+        let response = compio::time::timeout_at(deadline, request?.send())
+            .await.map_err(|_| cyper::Error::Timeout)??;
+        let status = response.status();
+        if status.is_client_error() || status.is_server_error() {
+            return Err(DownloadError::HttpStatus(status));
         }
+        Ok(deadline_stream(response.bytes_stream(), deadline))
+    }
+    .try_flatten_stream()
+}
+
+fn deadline_stream<S>(stream: S, deadline: Instant) -> impl Stream<Item = Result<Bytes, DownloadError>>
+where
+    S: Stream<Item = cyper::Result<Bytes>> + 'static,
+{
+    futures::stream::unfold(Some(Box::pin(stream)), move |stream| async move {
+        let mut stream = stream?;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let next = if remaining.is_zero() {
+            Some(Err(cyper::Error::Timeout))
+        } else {
+            match compio::time::timeout(remaining, stream.next()).await {
+                Ok(next) => next,
+                Err(_) => Some(Err(cyper::Error::Timeout)),
+            }
+        };
+        next.map(|item| match item {
+            Ok(bytes) => (Ok(bytes), Some(stream)),
+            Err(error) => (Err(DownloadError::from(error)), None),
+        })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[compio::test]
+    async fn stalled_body_returns_one_timeout_then_ends() {
+        let stream = deadline_stream(futures::stream::pending(), Instant::now() + Duration::from_millis(5));
+        let mut stream = std::pin::pin!(stream);
+        assert!(matches!(stream.next().await, Some(Err(DownloadError::Network(error))) if matches!(*error, cyper::Error::Timeout)));
+        assert!(stream.next().await.is_none());
+    }
 }

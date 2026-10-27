@@ -20,7 +20,7 @@ enum Command {
     Start,
 }
 
-#[tokio::main]
+#[compio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     pretty_env_logger::init();
     log::info!("Starting buttons bot...");

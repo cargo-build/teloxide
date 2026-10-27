@@ -2132,7 +2132,7 @@ impl Message {
         //
         // The `url` produced by formatting is correct since username is
         // /[a-zA-Z0-9_]{5,32}/ and chat/message ids are integers.
-        Some(reqwest::Url::parse(&url).unwrap())
+        Some(url::Url::parse(&url).unwrap())
     }
 
     /// Produces a direct link to a comment on this post.

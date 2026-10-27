@@ -48,7 +48,7 @@ impl Me {
 
     /// Returns an URL that links to this bot in the form of `t.me/<...>`.
     #[must_use]
-    pub fn tme_url(&self) -> reqwest::Url {
+    pub fn tme_url(&self) -> url::Url {
         format!("https://t.me/{}", self.username()).parse().unwrap()
     }
 }

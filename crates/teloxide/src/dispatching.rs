@@ -158,7 +158,7 @@
 //! # use teloxide::dispatching::{Dispatcher, dialogue::InMemStorage};
 //! # enum State {}
 //! # fn schema() -> teloxide::dispatching::UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>> { teloxide::dptree::entry() }
-//! #[tokio::main]
+//! #[compio::main]
 //! async fn main() {
 //!     let bot = Bot::from_env();
 //!

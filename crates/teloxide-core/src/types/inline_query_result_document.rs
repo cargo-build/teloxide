@@ -37,7 +37,7 @@ pub struct InlineQueryResultDocument {
     pub caption_entities: Option<Vec<MessageEntity>>,
 
     /// A valid URL for the file.
-    pub document_url: reqwest::Url,
+    pub document_url: url::Url,
 
     /// Mime type of the content of the file, either `application/pdf` or
     /// `application/zip`.
@@ -55,7 +55,7 @@ pub struct InlineQueryResultDocument {
     pub input_message_content: Option<InputMessageContent>,
 
     /// URL of the thumbnail (jpeg only) for the file.
-    pub thumbnail_url: Option<reqwest::Url>,
+    pub thumbnail_url: Option<url::Url>,
 
     /// Thumbnail width.
     pub thumbnail_width: Option<u32>,
@@ -104,7 +104,7 @@ impl InlineQueryResultDocument {
     }
 
     #[must_use]
-    pub fn document_url(mut self, val: reqwest::Url) -> Self {
+    pub fn document_url(mut self, val: url::Url) -> Self {
         self.document_url = val;
         self
     }
@@ -136,7 +136,7 @@ impl InlineQueryResultDocument {
     }
 
     #[must_use]
-    pub fn thumbnail_url(mut self, val: reqwest::Url) -> Self {
+    pub fn thumbnail_url(mut self, val: url::Url) -> Self {
         self.thumbnail_url = Some(val);
         self
     }

@@ -10,8 +10,8 @@ use std::{
     vec,
 };
 
-use futures::{ready, stream::Stream};
-use tokio::time::{sleep, Sleep};
+use compio::time::sleep;
+use futures::{future::LocalBoxFuture, ready, stream::Stream, FutureExt as _};
 
 use teloxide_core::errors::AsResponseParameters;
 
@@ -39,17 +39,16 @@ pub struct PollingBuilder<R> {
 
 impl<R> PollingBuilder<R>
 where
-    R: Requester + Send + 'static,
-    <R as Requester>::GetUpdates: Send,
+    R: Requester + 'static,
 {
     /// A timeout in seconds for polling.
     ///
     /// ## Note
     ///
     /// `timeout` should not be bigger than http client timeout, see
-    /// [`default_reqwest_settings`] for default http client settings.
+    /// [`default_cyper_settings`] for default http client settings.
     ///
-    /// [`default_reqwest_settings`]: crate::net::default_reqwest_settings
+    /// [`default_cyper_settings`]: crate::net::default_cyper_settings
     pub fn timeout(self, timeout: Duration) -> Self {
         Self { timeout: Some(timeout), ..self }
     }
@@ -94,7 +93,7 @@ where
     /// By default, the [`exponential_backoff_strategy`] is used.
     pub fn backoff_strategy(
         self,
-        backoff_strategy: impl 'static + Send + Fn(u32) -> Duration,
+        backoff_strategy: impl 'static + Fn(u32) -> Duration,
     ) -> Self {
         Self { backoff_strategy: Box::new(backoff_strategy), ..self }
     }
@@ -139,8 +138,7 @@ where
 /// This function will automatically delete a webhook if it was set up.
 pub async fn polling_default<R>(bot: R) -> Polling<R>
 where
-    R: Requester + Send + 'static,
-    <R as Requester>::GetUpdates: Send,
+    R: Requester + 'static,
 {
     let polling =
         Polling::builder(bot).timeout(Duration::from_secs(10)).delete_webhook().await.build();
@@ -260,8 +258,7 @@ where
     /// Returns a builder for polling update listener.
     pub fn builder(bot: R) -> PollingBuilder<R>
     where
-        R: Send + 'static,
-        <R as Requester>::GetUpdates: Send,
+        R: 'static,
     {
         PollingBuilder {
             bot,
@@ -318,16 +315,17 @@ pub struct PollingStream<'a, B: Requester> {
     #[pin]
     flag: StopFlag,
 
-    /// How long it takes to make next reconnection attempt
+    /// How long it takes to make next reconnection attempt. Compio's sleep
+    /// future is an opaque `!Send` type, so it is kept boxed locally.
     #[pin]
-    eepy: Option<Sleep>,
+    eepy: Option<LocalBoxFuture<'static, ()>>,
 
     /// Counter for network errors occured during the current series of
     /// reconnections
     error_count: u32,
 }
 
-impl<B: Requester + Send + 'static> UpdateListener for Polling<B> {
+impl<B: Requester> UpdateListener for Polling<B> {
     type Err = B::Err;
 
     fn stop_token(&mut self) -> StopToken {
@@ -343,7 +341,7 @@ impl<B: Requester + Send + 'static> UpdateListener for Polling<B> {
     }
 }
 
-impl<'a, B: Requester + Send + 'a> AsUpdateStream<'a> for Polling<B> {
+impl<'a, B: Requester> AsUpdateStream<'a> for Polling<B> {
     type StreamErr = B::Err;
     type Stream = PollingStream<'a, B>;
 
@@ -458,7 +456,7 @@ impl<B: Requester> Stream for PollingStream<'_, B> {
                         }
                     };
                     log::info!("retrying getting updates in {}s", delay.as_secs());
-                    this.eepy.set(Some(sleep(delay)));
+                    this.eepy.set(Some(sleep(delay).boxed_local()));
 
                     return Ready(Some(Err(err)));
                 }
@@ -505,17 +503,4 @@ impl<B: Requester> Stream for PollingStream<'_, B> {
         cx.waker().wake_by_ref();
         Poll::Pending
     }
-}
-
-#[test]
-fn polling_is_send() {
-    let bot = crate::Bot::new("TOKEN");
-
-    let mut polling = Polling::builder(bot).build();
-
-    assert_send(&polling);
-    assert_send(&polling.as_stream());
-    assert_send(&polling.stop_token());
-
-    fn assert_send(_: &impl Send) {}
 }

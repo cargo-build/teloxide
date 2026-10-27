@@ -36,7 +36,7 @@ pub enum StartCommand {
     Start(String),
 }
 
-#[tokio::main]
+#[compio::main]
 async fn main() {
     pretty_env_logger::init();
     log::info!("Starting deep linking bot...");

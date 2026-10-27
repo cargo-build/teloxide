@@ -1,7 +1,7 @@
 use std::{future::IntoFuture, sync::Arc};
 
-use futures::{future::BoxFuture, FutureExt};
-use reqwest::Url;
+use futures::{future::LocalBoxFuture, FutureExt};
+use url::Url;
 
 use crate::{
     errors::AsResponseParameters,
@@ -73,13 +73,13 @@ where
 impl<'a, T, E> Request for ErasedRequest<'a, T, E>
 where
     T: Payload,
-    E: std::error::Error + Send,
+    E: std::error::Error,
 {
     type Err = E;
 
-    type Send = BoxFuture<'a, Result<Output<Self>, Self::Err>>;
+    type Send = LocalBoxFuture<'a, Result<Output<Self>, Self::Err>>;
 
-    type SendRef = BoxFuture<'a, Result<Output<Self>, Self::Err>>;
+    type SendRef = LocalBoxFuture<'a, Result<Output<Self>, Self::Err>>;
 
     fn send(self) -> Self::Send {
         self.inner.send_box()
@@ -93,7 +93,7 @@ where
 impl<T, E> IntoFuture for ErasedRequest<'_, T, E>
 where
     T: Payload,
-    E: std::error::Error + Send,
+    E: std::error::Error,
 {
     type Output = Result<Output<Self>, <Self as Request>::Err>;
     type IntoFuture = <Self as Request>::Send;
@@ -108,11 +108,11 @@ where
 /// TODO(waffle): make [`Request`] object safe and remove this trait (this is a
 /// breaking change)
 trait ErasableRequest<'a>: HasPayload {
-    type Err: std::error::Error + Send;
+    type Err: std::error::Error;
 
-    fn send_box(self: Box<Self>) -> BoxFuture<'a, Result<Output<Self>, Self::Err>>;
+    fn send_box(self: Box<Self>) -> LocalBoxFuture<'a, Result<Output<Self>, Self::Err>>;
 
-    fn send_ref(&self) -> BoxFuture<'a, Result<Output<Self>, Self::Err>>;
+    fn send_ref(&self) -> LocalBoxFuture<'a, Result<Output<Self>, Self::Err>>;
 }
 
 impl<'a, R> ErasableRequest<'a> for R
@@ -123,12 +123,12 @@ where
 {
     type Err = R::Err;
 
-    fn send_box(self: Box<Self>) -> BoxFuture<'a, Result<Output<Self>, Self::Err>> {
-        self.send().boxed()
+    fn send_box(self: Box<Self>) -> LocalBoxFuture<'a, Result<Output<Self>, Self::Err>> {
+        self.send().boxed_local()
     }
 
-    fn send_ref(&self) -> BoxFuture<'a, Result<Output<Self>, Self::Err>> {
-        Request::send_ref(self).boxed()
+    fn send_ref(&self) -> LocalBoxFuture<'a, Result<Output<Self>, Self::Err>> {
+        Request::send_ref(self).boxed_local()
     }
 }
 
@@ -183,7 +183,7 @@ macro_rules! fwd_erased {
 
 impl<'a, Err> Requester for ErasedRequester<'a, Err>
 where
-    Err: std::error::Error + Send + AsResponseParameters,
+    Err: std::error::Error + AsResponseParameters,
 {
     type Err = Err;
 
@@ -363,7 +363,7 @@ where
 /// Object safe version of [`Requester`].
 trait ErasableRequester<'a> {
     /// Error type returned by all requests.
-    type Err: std::error::Error + Send;
+    type Err: std::error::Error;
 
     fn get_updates(&self) -> ErasedRequest<'a, GetUpdates, Self::Err>;
 

@@ -1,13 +1,11 @@
 use std::{
     convert::Infallible,
     fmt::{Debug, Display},
-    str,
     sync::Arc,
 };
 
-use futures::future::BoxFuture;
+use futures::future::LocalBoxFuture;
 use serde::{de::DeserializeOwned, Serialize};
-use sqlx::postgres::{PgPool, PgPoolOptions};
 use teloxide_core::types::ChatId;
 use thiserror::Error;
 
@@ -23,77 +21,51 @@ where
     SerdeError(SE),
 
     #[error("postgres error: {0}")]
-    PostgresError(#[from] sqlx::Error),
+    PostgresError(#[from] compio_postgres::Error),
 
-    // TODO maybe add chat_id for the sake of completeness?
+    #[error("postgres connection error: {0}")]
+    ConnectionError(#[from] std::io::Error),
+
     #[error("row not found")]
     DialogueNotFound,
 }
 
-/// A persistent dialogue storage based on [PostgreSQL](https://www.postgresql.org/)
+/// A persistent dialogue storage based on [PostgreSQL](https://www.postgresql.org/).
 pub struct PostgresStorage<S> {
-    pool: PgPool,
+    pool: compio_postgres::Pool,
     serializer: S,
 }
 
 impl<S> PostgresStorage<S> {
-    /// Opens a connection pool to the [Postgres](https://www.postgresql.org/) database and creates the table
-    /// for storing dialogues.
+    /// Opens at most `max_connections` sessions and bootstraps the dialogue table.
     ///
-    /// Parameters:
-    /// - database_url: full url to the postgres database, for example
-    ///   `"postgres://postgres:password@localhost/test")`
-    /// - max_connections: number of connections in creating connection pool. Be
-    ///   mindful of the connection limits for your database, each connection
-    ///   established with the Postgres creates a new process on the server side
-    /// - serializer: what [`Serializer`] will be used to encode the dialogue
-    ///   data. Available ones are: [`Json`], [`Bincode`], [`Cbor`]
-    ///
-    /// [`Json`]: crate::dispatching::dialogue::serializer::Json
-    /// [`Bincode`]: crate::dispatching::dialogue::serializer::Bincode
-    /// [`Cbor`]: crate::dispatching::dialogue::serializer::Cbor
+    /// The URL supplies authentication, database, host, port and TLS settings.
     pub async fn open(
         database_url: &str,
         max_connections: u32,
         serializer: S,
     ) -> Result<Arc<Self>, PostgresStorageError<Infallible>> {
-        let pool =
-            PgPoolOptions::new().max_connections(max_connections).connect(database_url).await?;
-        sqlx::query(include_str!("postgres_storage/queries/create_teloxide_dialogues.sql"))
-            .execute(&pool)
+        let max_connections = std::num::NonZeroU32::new(max_connections).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "max_connections must be positive",
+            )
+        })?;
+        let pool = compio_postgres::Pool::new(database_url, max_connections)?;
+        let connection = pool.get().await?;
+        connection
+            .client()
+            .batch_execute(include_str!("postgres_storage/queries/create_teloxide_dialogues.sql"))
             .await?;
-
+        connection.recycle();
         Ok(Arc::new(Self { pool, serializer }))
-    }
-
-    async fn get_dialogue(
-        self: Arc<Self>,
-        ChatId(chat_id): ChatId,
-    ) -> Result<Option<Vec<u8>>, sqlx::Error> {
-        #[derive(sqlx::FromRow)]
-        struct DialogueDbRow {
-            dialogue: Vec<u8>,
-        }
-
-        let bytes = sqlx::query_as::<_, DialogueDbRow>(include_str!(
-            "postgres_storage/queries/get_dialogue.sql"
-        ))
-        .bind(chat_id)
-        .fetch_optional(&self.pool)
-        .await?
-        .map(|r| r.dialogue);
-
-        Ok(bytes)
     }
 }
 
-// FIXME: these methods' bodies are almostly the same as SqliteStorage ones
-// (except actual queries) Maybe combine them somehow?
-
 impl<S, D> Storage<D> for PostgresStorage<S>
 where
-    S: Send + Sync + Serializer<D> + 'static,
-    D: Send + Serialize + DeserializeOwned + 'static,
+    S: Serializer<D> + 'static,
+    D: Serialize + DeserializeOwned + 'static,
     <S as Serializer<D>>::Error: Debug + Display,
 {
     type Error = PostgresStorageError<<S as Serializer<D>>::Error>;
@@ -101,23 +73,18 @@ where
     fn remove_dialogue(
         self: Arc<Self>,
         ChatId(chat_id): ChatId,
-    ) -> BoxFuture<'static, Result<(), Self::Error>>
-    where
-        D: Send + 'static,
-    {
+    ) -> LocalBoxFuture<'static, Result<(), Self::Error>> {
         Box::pin(async move {
-            let deleted_rows_count =
-                sqlx::query(include_str!("postgres_storage/queries/remove_dialogue.sql"))
-                    .bind(chat_id)
-                    .execute(&self.pool)
-                    .await?
-                    .rows_affected();
-
-            if deleted_rows_count == 0 {
-                return Err(PostgresStorageError::DialogueNotFound);
+            let connection = self.pool.get().await?;
+            let statement = connection
+                .prepare_cached(include_str!("postgres_storage/queries/remove_dialogue.sql"))
+                .await?;
+            let deleted = connection.client().execute(&statement, &[&chat_id]).await?;
+            connection.recycle();
+            match deleted {
+                0 => Err(PostgresStorageError::DialogueNotFound),
+                _ => Ok(()),
             }
-
-            Ok(())
         })
     }
 
@@ -125,31 +92,36 @@ where
         self: Arc<Self>,
         ChatId(chat_id): ChatId,
         dialogue: D,
-    ) -> BoxFuture<'static, Result<(), Self::Error>>
-    where
-        D: Send + 'static,
-    {
+    ) -> LocalBoxFuture<'static, Result<(), Self::Error>> {
         Box::pin(async move {
-            let d =
+            let bytes =
                 self.serializer.serialize(&dialogue).map_err(PostgresStorageError::SerdeError)?;
-            sqlx::query(include_str!("postgres_storage/queries/update_dialogue.sql"))
-                .bind(chat_id)
-                .bind(d)
-                .execute(&self.pool)
+            let connection = self.pool.get().await?;
+            let statement = connection
+                .prepare_cached(include_str!("postgres_storage/queries/update_dialogue.sql"))
                 .await?;
+            connection.client().execute(&statement, &[&chat_id, &bytes]).await?;
+            connection.recycle();
             Ok(())
         })
     }
 
     fn get_dialogue(
         self: Arc<Self>,
-        chat_id: ChatId,
-    ) -> BoxFuture<'static, Result<Option<D>, Self::Error>> {
+        ChatId(chat_id): ChatId,
+    ) -> LocalBoxFuture<'static, Result<Option<D>, Self::Error>> {
         Box::pin(async move {
-            self.clone()
-                .get_dialogue(chat_id)
-                .await?
-                .map(|d| self.serializer.deserialize(&d).map_err(PostgresStorageError::SerdeError))
+            let connection = self.pool.get().await?;
+            let statement = connection
+                .prepare_cached(include_str!("postgres_storage/queries/get_dialogue.sql"))
+                .await?;
+            let row = connection.client().query_opt(&statement, &[&chat_id]).await?;
+            let bytes: Option<Vec<u8>> = row.map(|row| row.try_get(0)).transpose()?;
+            connection.recycle();
+            bytes
+                .map(|bytes| {
+                    self.serializer.deserialize(&bytes).map_err(PostgresStorageError::SerdeError)
+                })
                 .transpose()
         })
     }

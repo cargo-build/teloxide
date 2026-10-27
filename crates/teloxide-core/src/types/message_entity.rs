@@ -96,7 +96,7 @@ impl MessageEntity {
 
     /// Create a message entity representing a clickable text URL.
     #[must_use]
-    pub const fn text_link(url: reqwest::Url, offset: usize, length: usize) -> Self {
+    pub const fn text_link(url: url::Url, offset: usize, length: usize) -> Self {
         Self { kind: MessageEntityKind::TextLink { url }, offset, length }
     }
 
@@ -265,7 +265,7 @@ pub enum MessageEntityKind {
     Spoiler,
     Code,
     Pre { language: Option<String> },
-    TextLink { url: reqwest::Url },
+    TextLink { url: url::Url },
     TextMention { user: User },
     CustomEmoji { custom_emoji_id: CustomEmojiId },
 }
@@ -283,7 +283,7 @@ mod tests {
         assert_eq!(
             MessageEntity {
                 kind: MessageEntityKind::TextLink {
-                    url: reqwest::Url::parse("https://example.com").unwrap(),
+                    url: url::Url::parse("https://example.com").unwrap(),
                 },
                 offset: 1,
                 length: 2,

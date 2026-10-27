@@ -4,10 +4,8 @@ use futures::{
     task::{Context, Poll},
     Future,
 };
-use tokio::sync::{
-    mpsc,
-    oneshot::{self, Receiver, Sender},
-};
+use async_channel as mpsc;
+use futures::channel::oneshot::{self, Receiver, Sender};
 
 use crate::adaptors::throttle::FreezeUntil;
 

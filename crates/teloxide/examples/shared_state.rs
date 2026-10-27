@@ -7,7 +7,7 @@ use std::sync::{
 
 use teloxide::prelude::*;
 
-#[tokio::main]
+#[compio::main]
 async fn main() {
     pretty_env_logger::init();
     log::info!("Starting shared state bot...");

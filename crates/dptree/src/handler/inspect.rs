@@ -1,0 +1,107 @@
+use crate::{
+    di::{Asyncify, Injectable},
+    from_fn_with_description, Handler, HandlerDescription, HandlerSignature,
+};
+
+use std::{collections::BTreeSet, rc::Rc};
+
+/// Constructs a handler that inspects current state. Like [`map`] but does not
+/// add return value of `f` to the container.
+///
+/// [`map`]: crate::map
+#[must_use]
+#[track_caller]
+pub fn inspect<'a, F, Output, Args, Descr>(f: F) -> Handler<'a, Output, Descr>
+where
+    Asyncify<F>: Injectable<(), Args> + 'a,
+    Output: 'a,
+    Descr: HandlerDescription,
+{
+    inspect_with_description(Descr::inspect(), f)
+}
+
+/// The asynchronous version of [`inspect`].
+#[must_use]
+#[track_caller]
+pub fn inspect_async<'a, F, Output, Args, Descr>(f: F) -> Handler<'a, Output, Descr>
+where
+    F: Injectable<(), Args> + 'a,
+    Output: 'a,
+    Descr: HandlerDescription,
+{
+    inspect_async_with_description(Descr::inspect_async(), f)
+}
+
+/// [`inspect`] with a custom description.
+#[must_use]
+#[track_caller]
+pub fn inspect_with_description<'a, F, Output, Args, Descr>(
+    description: Descr,
+    f: F,
+) -> Handler<'a, Output, Descr>
+where
+    Asyncify<F>: Injectable<(), Args> + 'a,
+    Output: 'a,
+{
+    inspect_async_with_description(description, Asyncify(f))
+}
+
+/// [`inspect_async`] with a custom description.
+#[must_use]
+#[track_caller]
+pub fn inspect_async_with_description<'a, F, Output, Args, Descr>(
+    description: Descr,
+    f: F,
+) -> Handler<'a, Output, Descr>
+where
+    F: Injectable<(), Args> + 'a,
+    Output: 'a,
+{
+    let f = Rc::new(f);
+
+    from_fn_with_description(
+        description,
+        move |x, cont| {
+            let f = Rc::clone(&f);
+            async move {
+                {
+                    let f = f.inject(&x);
+                    f().await;
+                }
+
+                cont(x).await
+            }
+        },
+        HandlerSignature::Other {
+            obligations: F::obligations(),
+            guaranteed_outcomes: BTreeSet::default(),
+            conditional_outcomes: BTreeSet::default(),
+            continues: true,
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::Cell, ops::ControlFlow, rc::Rc};
+
+    use super::*;
+    use crate::{deps, help_inference};
+
+    #[compio::test]
+    async fn test_inspect() {
+        let value = 123;
+        let inspect_passed = Rc::new(Cell::new(false));
+        let inspect_passed_cloned = Rc::clone(&inspect_passed);
+
+        let result: ControlFlow<(), _> = help_inference(inspect(move |x: i32| {
+            assert_eq!(x, value);
+            inspect_passed_cloned.set(true);
+        }))
+        .dispatch(deps![value])
+        .await;
+
+        assert!(matches!(result, ControlFlow::Continue(_)));
+        assert!(inspect_passed.get());
+    }
+}

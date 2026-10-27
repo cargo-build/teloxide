@@ -6,7 +6,8 @@ use std::{
 
 use either::Either;
 use futures::{future, FutureExt as _};
-use tokio::sync::{mpsc, mpsc::error::TryRecvError, oneshot::Sender};
+use async_channel::{self as mpsc, TryRecvError};
+use futures::channel::oneshot::Sender;
 use vecrem::VecExt;
 
 use crate::{
@@ -118,7 +119,7 @@ pub(super) async fn worker<B>(
     let mut last_queue_full =
         Instant::now().checked_sub(QUEUE_FULL_DELAY).unwrap_or_else(Instant::now);
 
-    let (freeze_tx, mut freeze_rx) = mpsc::channel::<FreezeUntil>(1);
+    let (freeze_tx, mut freeze_rx) = mpsc::bounded::<FreezeUntil>(1);
 
     while !rx_is_closed || !queue.is_empty() {
         // FIXME(waffle):
@@ -133,7 +134,7 @@ pub(super) async fn worker<B>(
 
         loop {
             let res = future::select(
-                pin!(freeze_rx.recv()),
+                pin!(freeze_rx.recv().map(Result::ok)),
                 pin!(read_from_rx(&mut rx, &mut queue, &mut rx_is_closed)),
             )
             .map(either)
@@ -151,39 +152,10 @@ pub(super) async fn worker<B>(
 
         if queue.len() == queue.capacity() && last_queue_full.elapsed() > QUEUE_FULL_DELAY {
             last_queue_full = Instant::now();
-            tokio::spawn(on_queue_full(queue.len()));
+            compio::runtime::spawn(on_queue_full(queue.len())).detach();
         }
 
-        // _Maybe_ we need to use `spawn_blocking` here, because there is
-        // decent amount of blocking work. However _for now_ I've decided not
-        // to use it here.
-        //
-        // Reasons (not to use `spawn_blocking`):
-        //
-        // 1. The work seems not very CPU-bound, it's not heavy computations, it's more
-        //    like light computations.
-        //
-        // 2. `spawn_blocking` is not zero-cost — it spawns a new system thread
-        //    + do so other work. This may actually be *worse* then current
-        //    "just do everything in this async fn" approach.
-        //
-        // 3. With `rt-threaded` feature, tokio uses [`num_cpus()`] threads which should
-        //    be enough to work fine with one a-bit-blocking task. Crucially current
-        //    behaviour will be problem mostly with single-threaded runtimes (and in
-        //    case you're using one, you probably don't want to spawn unnecessary
-        //    threads anyway).
-        //
-        // I think if we'll ever change this behaviour, we need to make it
-        // _configurable_.
-        //
-        // See also [discussion (ru)].
-        //
-        // NOTE: If you are reading this because you have any problems because
-        // of this worker, open an [issue on github]
-        //
-        // [`num_cpus()`]: https://vee.gg/JGwq2
-        // [discussion (ru)]: https://t.me/rust_async/27891
-        // [issue on github]: https://github.com/teloxide/teloxide/issues/new
+        // Rate accounting is bounded by the configured queue and runs locally.
         //
         // (waffle)
 
@@ -218,7 +190,7 @@ pub(super) async fn worker<B>(
 
         if allowed == 0 {
             requests_sent.per_sec.clear();
-            tokio::time::sleep(DELAY).await;
+            compio::time::sleep(DELAY).await;
             continue;
         }
 
@@ -279,7 +251,7 @@ pub(super) async fn worker<B>(
         // It's easier to just recompute last second stats, instead of keeping
         // track of it alongside with minute stats, so we just throw this away.
         requests_sent.per_sec.clear();
-        tokio::time::sleep(DELAY).await;
+        compio::time::sleep(DELAY).await;
     }
 }
 
@@ -348,7 +320,7 @@ async fn freeze(
                  telegram"
             );
 
-            tokio::time::sleep_until(until.into()).await;
+            compio::time::sleep_until(until.into()).await;
 
             log::warn!("unfreezing the bot");
         }
@@ -360,8 +332,8 @@ async fn read_from_rx<T>(rx: &mut mpsc::Receiver<T>, queue: &mut Vec<T>, rx_is_c
         log::debug!("blocking on queue");
 
         match rx.recv().await {
-            Some(req) => queue.push(req),
-            None => *rx_is_closed = true,
+            Ok(req) => queue.push(req),
+            Err(_) => *rx_is_closed = true,
         }
     }
 
@@ -369,7 +341,7 @@ async fn read_from_rx<T>(rx: &mut mpsc::Receiver<T>, queue: &mut Vec<T>, rx_is_c
     while queue.len() < queue.capacity() {
         match rx.try_recv() {
             Ok(req) => queue.push(req),
-            Err(TryRecvError::Disconnected) => {
+            Err(TryRecvError::Closed) => {
                 *rx_is_closed = true;
                 break;
             }
@@ -388,9 +360,9 @@ fn either<L, R>(x: future::Either<L, R>) -> Either<L, R> {
 
 #[cfg(test)]
 mod tests {
-    #[tokio::test]
+    #[compio::test]
     async fn issue_535() {
-        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let (tx, mut rx) = async_channel::bounded(1);
 
         // Close channel
         drop(tx);

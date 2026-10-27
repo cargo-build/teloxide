@@ -52,9 +52,8 @@ use std::fmt::Debug;
 #[cfg(feature = "ctrlc_handler")]
 pub async fn repl<R, H, Args>(bot: R, handler: H)
 where
-    R: Requester + Send + Sync + Clone + 'static,
-    <R as Requester>::GetUpdates: Send,
-    H: Injectable<ResponseResult<()>, Args> + Send + Sync + 'static,
+    R: Requester + Clone + 'static,
+    H: Injectable<ResponseResult<()>, Args> + 'static,
 {
     let cloned_bot = bot.clone();
     repl_with_listener(bot, handler, update_listeners::polling_default(cloned_bot).await).await;
@@ -107,9 +106,9 @@ where
 #[cfg(feature = "ctrlc_handler")]
 pub async fn repl_with_listener<R, H, L, Args>(bot: R, handler: H, listener: L)
 where
-    R: Requester + Clone + Send + Sync + 'static,
-    H: Injectable<ResponseResult<()>, Args> + Send + Sync + 'static,
-    L: UpdateListener + Send,
+    R: Requester + Clone + 'static,
+    H: Injectable<ResponseResult<()>, Args> + 'static,
+    L: UpdateListener,
     L::Err: Debug,
 {
     use crate::dispatching::Dispatcher;
@@ -127,13 +126,4 @@ where
             LoggingErrorHandler::with_custom_text("An error from the update listener"),
         )
         .await;
-}
-
-#[test]
-fn repl_is_send() {
-    let bot = crate::Bot::new("");
-    let repl = crate::repl(bot, || async { Ok(()) });
-    assert_send(&repl);
-
-    fn assert_send(_: &impl Send) {}
 }

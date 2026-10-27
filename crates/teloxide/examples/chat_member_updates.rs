@@ -12,7 +12,7 @@ use teloxide_core::adaptors::DefaultParseMode;
 /// [requester adaptor]: teloxide::requests::Requester#adaptors
 type Bot = DefaultParseMode<teloxide::Bot>;
 
-#[tokio::main]
+#[compio::main]
 async fn main() -> ResponseResult<()> {
     pretty_env_logger::init();
 

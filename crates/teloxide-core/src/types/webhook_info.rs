@@ -15,7 +15,7 @@ pub struct WebhookInfo {
     /// Webhook URL, `None` if webhook is not set up.
     #[serde(with = "crate::types::option_url_from_string")]
     #[cfg_attr(test, schemars(with = "String"))] // Lack of Option is on purpose
-    pub url: Option<reqwest::Url>,
+    pub url: Option<url::Url>,
 
     /// `true`, if a custom certificate was provided for webhook certificate
     /// checks.

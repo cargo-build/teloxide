@@ -51,7 +51,7 @@ pub struct InlineQueryResultLocation {
     pub input_message_content: Option<InputMessageContent>,
 
     /// Url of the thumbnail for the result.
-    pub thumbnail_url: Option<reqwest::Url>,
+    pub thumbnail_url: Option<url::Url>,
 
     /// Thumbnail width.
     pub thumbnail_width: Option<u32>,
@@ -148,7 +148,7 @@ impl InlineQueryResultLocation {
     }
 
     #[must_use]
-    pub fn thumbnail_url(mut self, val: reqwest::Url) -> Self {
+    pub fn thumbnail_url(mut self, val: url::Url) -> Self {
         self.thumbnail_url = Some(val);
         self
     }

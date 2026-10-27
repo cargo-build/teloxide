@@ -1,6 +1,6 @@
 use crate::serde_multipart::error::Error;
 
-use reqwest::multipart::{Form, Part};
+use cyper::multipart::{Form, Part};
 use serde::{
     ser::{Impossible, SerializeMap, SerializeSeq, SerializeStruct},
     Serialize, Serializer,

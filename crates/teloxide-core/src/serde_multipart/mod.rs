@@ -1,7 +1,7 @@
 //! Module for serializing into `multipart/form-data`
-//! ([`reqwest::multipart::Form`])
+//! ([`cyper::multipart::Form`])
 //!
-//! [`reqwest::multipart::Form`]: reqwest::multipart::Form
+//! [`cyper::multipart::Form`]: cyper::multipart::Form
 //!
 //! ## How it works
 //!
@@ -15,7 +15,7 @@ mod serializers;
 
 use std::future::Future;
 
-use reqwest::multipart::Form;
+use cyper::multipart::Form;
 use serde::Serialize;
 
 use crate::requests::MultipartPayload;
@@ -24,7 +24,7 @@ use serializers::MultipartSerializer;
 
 /// Serializes given value into [`Form`] **taking all input files out**.
 ///
-/// [`Form`]:  reqwest::multipart::Form
+/// [`Form`]:  cyper::multipart::Form
 pub(crate) fn to_form<T>(val: &mut T) -> Result<impl Future<Output = Form>, Error>
 where
     T: Serialize + MultipartPayload,
@@ -53,7 +53,7 @@ where
 
 /// Serializes given value into [`Form`].
 ///
-/// [`Form`]:  reqwest::multipart::Form
+/// [`Form`]:  cyper::multipart::Form
 pub(crate) fn to_form_ref<T: ?Sized>(val: &T) -> Result<impl Future<Output = Form>, Error>
 where
     T: Serialize + MultipartPayload,
@@ -82,7 +82,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use tokio::fs::File;
+    use compio::fs::File;
+    use std::io::Cursor;
 
     use super::to_form_ref;
     use crate::{
@@ -95,7 +96,7 @@ mod tests {
     };
 
     // https://github.com/teloxide/teloxide/issues/473
-    #[tokio::test]
+    #[compio::test]
     async fn issue_473() {
         to_form_ref(
             &payloads::SendPhoto::new(ChatId(0), InputFile::file_id("0".into())).caption_entities(
@@ -106,7 +107,7 @@ mod tests {
         .await;
     }
 
-    #[tokio::test]
+    #[compio::test]
     async fn test_send_media_group() {
         const CAPTION: &str = "caption";
 
@@ -124,10 +125,10 @@ mod tests {
                 ),
                 InputMedia::Animation(
                     InputMediaAnimation::new(InputFile::read(
-                        File::open("../../media/example.gif").await.unwrap(),
+                        Cursor::new(File::open("../../media/example.gif").await.unwrap()),
                     ))
                     .thumbnail(InputFile::read(
-                        File::open("../../media/teloxide-core-logo.png").await.unwrap(),
+                        Cursor::new(File::open("../../media/teloxide-core-logo.png").await.unwrap()),
                     ))
                     .duration(17),
                 ),
@@ -144,7 +145,7 @@ mod tests {
         .await;
     }
 
-    #[tokio::test]
+    #[compio::test]
     async fn test_add_sticker_to_set() {
         to_form_ref(&payloads::AddStickerToSet::new(
             UserId(0),
@@ -164,7 +165,7 @@ mod tests {
         .await;
     }
 
-    #[tokio::test]
+    #[compio::test]
     async fn test_send_animation() {
         to_form_ref(
             &payloads::SendAnimation::new(
@@ -173,7 +174,7 @@ mod tests {
             )
             .caption_entities(entities())
             .thumbnail(InputFile::read(
-                File::open("../../media/teloxide-core-logo.png").await.unwrap(),
+                Cursor::new(File::open("../../media/teloxide-core-logo.png").await.unwrap()),
             )),
         )
         .unwrap()

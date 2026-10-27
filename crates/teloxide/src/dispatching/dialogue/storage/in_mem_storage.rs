@@ -1,9 +1,10 @@
-use super::Storage;
-use futures::future::BoxFuture;
 use std::{collections::HashMap, sync::Arc};
+
+use futures::{future::LocalBoxFuture, lock::Mutex};
 use teloxide_core::types::ChatId;
 use thiserror::Error;
-use tokio::sync::Mutex;
+
+use super::Storage;
 
 /// An error returned from [`InMemStorage`].
 #[derive(Debug, Error)]
@@ -34,16 +35,16 @@ impl<S> InMemStorage<S> {
 impl<D> Storage<D> for InMemStorage<D>
 where
     D: Clone,
-    D: Send + 'static,
+    D: 'static,
 {
     type Error = InMemStorageError;
 
     fn remove_dialogue(
         self: Arc<Self>,
         chat_id: ChatId,
-    ) -> BoxFuture<'static, Result<(), Self::Error>>
+    ) -> LocalBoxFuture<'static, Result<(), Self::Error>>
     where
-        D: Send + 'static,
+        D: 'static,
     {
         Box::pin(async move {
             self.map
@@ -58,9 +59,9 @@ where
         self: Arc<Self>,
         chat_id: ChatId,
         dialogue: D,
-    ) -> BoxFuture<'static, Result<(), Self::Error>>
+    ) -> LocalBoxFuture<'static, Result<(), Self::Error>>
     where
-        D: Send + 'static,
+        D: 'static,
     {
         Box::pin(async move {
             self.map.lock().await.insert(chat_id, dialogue);
@@ -71,7 +72,7 @@ where
     fn get_dialogue(
         self: Arc<Self>,
         chat_id: ChatId,
-    ) -> BoxFuture<'static, Result<Option<D>, Self::Error>> {
+    ) -> LocalBoxFuture<'static, Result<Option<D>, Self::Error>> {
         Box::pin(async move { Ok(self.map.lock().await.get(&chat_id).map(ToOwned::to_owned)) })
     }
 }

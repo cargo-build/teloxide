@@ -2,12 +2,12 @@
 //!
 //! This library provides tools for making requests to the [Telegram Bot API]
 //! (Currently, version `9.2` is supported) with ease. The library is fully
-//! asynchronous and built using [`tokio`].
+//! asynchronous and built using [`compio`].
 //!
 //!```toml
-//! teloxide-core = "0.13.0"
+//! teloxide-core = { git = "https://github.com/cargo-build/teloxide" }
 //! ```
-//! _Compiler support: requires rustc 1.85+_.
+//! _Compiler support: requires rustc 1.99+_.
 //!
 //! ```
 //! # async {
@@ -32,7 +32,7 @@
 //!
 //! [`teloxide`]: https://docs.rs/teloxide
 //! [Telegram Bot API]: https://core.telegram.org/bots/api
-//! [`tokio`]: https://tokio.rs
+//! [`compio`]: https://compio.rs
 //!
 //! ## Cargo features
 //!
@@ -70,7 +70,7 @@
 // (docs alias is defined in `.cargo/config.toml`)
 //
 // `dep_docsrs` is used for the same purpose, but when `teloxide-core` is built as a dependency
-// (see: `teloxide`). We can't use `docsrs` as it breaks tokio compilation in this case.
+// (see: `teloxide`). Dependency rustdoc uses its own configuration, so the wrapper passes a separate flag.
 #![cfg_attr(all(any(docsrs, dep_docsrs), feature = "nightly"), feature(doc_cfg, doc_notable_trait))]
 #![cfg_attr(feature = "nightly", feature(type_alias_impl_trait))]
 #![cfg_attr(all(feature = "full", docsrs), deny(rustdoc::broken_intra_doc_links))]

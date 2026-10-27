@@ -87,7 +87,7 @@ fn test() {
     let value = String::from("test");
     assert!(matches!(value.serialize(StringUnserializer), Ok(v) if v == value));
 
-    let url = reqwest::Url::parse("http://example.com").unwrap();
+    let url = url::Url::parse("http://example.com").unwrap();
     let value = InputFile::Url(url.clone());
     assert!(
         matches!(value.serialize(InputFileUnserializer::NotMem), Ok(InputFile::Url(v)) if v == url)

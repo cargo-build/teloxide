@@ -11,7 +11,7 @@
 //! use teloxide::prelude::*;
 //!
 //! # #[cfg(feature = "ctrlc_handler")]
-//! # #[tokio::main]
+//! # #[compio::main]
 //! # async fn main() {
 //! pretty_env_logger::init();
 //! log::info!("Starting throw dice bot...");
@@ -59,7 +59,7 @@
 //!
 //! pub type Error = Box<dyn std::error::Error + Send + Sync>;
 //!
-//! #[tokio::main]
+//! #[compio::main]
 //! async fn main() -> Result<(), Error> {
 //!     let bot = Bot::from_env();
 //!     let schema = Update::filter_message()

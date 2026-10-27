@@ -1,22 +1,17 @@
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
+use compio::io::AsyncRead;
 use futures::{
     future::{ready, Either},
-    stream,
+    stream::{self, LocalBoxStream},
+    StreamExt, TryStreamExt,
 };
 use once_cell::sync::OnceCell;
-use rc_box::ArcBox;
-use reqwest::{multipart::Part, Body};
+use cyper::{multipart::Part, Body};
 use serde::Serialize;
-use takecell::TakeCell;
-use tokio::{
-    io::{AsyncRead, AsyncReadExt, ReadBuf},
-    sync::watch,
-};
-use tokio_util::codec::{Decoder, FramedRead};
+
 
 use std::{
-    borrow::Cow, convert::Infallible, fmt, future::Future, io, iter, mem, path::PathBuf, pin::Pin,
-    sync::Arc, task,
+    borrow::Cow, fmt, future::Future, io, mem, path::PathBuf, rc::Rc, sync::Arc,
 };
 
 use crate::types::{self, InputSticker};
@@ -104,8 +99,8 @@ impl InputFile {
     ///
     /// Note: in some cases (e.g. sending the same `InputFile` multiple times)
     /// this may read the whole `impl AsyncRead` into memory.
-    pub fn read(it: impl AsyncRead + Send + Unpin + 'static) -> Self {
-        Self::new(Read(Read::new(Arc::new(TakeCell::new(it)))))
+    pub fn read(it: impl AsyncRead + 'static) -> Self {
+        Self::new(Read(Read::new(it)))
     }
 
     /// Shorthand for `Self { file_name: None, inner, id: default() }`
@@ -204,17 +199,9 @@ impl InputFile {
 
             File(path_to_file) => {
                 let fut = async {
-                    let body = match tokio::fs::File::open(path_to_file).await {
-                        Ok(file) => {
-                            let file = FramedRead::new(file, BytesDecoder);
-
-                            Body::wrap_stream(file)
-                        }
-                        Err(err) => {
-                            // explicit type needed for `Bytes: From<?T>` in `wrap_stream`
-                            let err = Err::<Bytes, _>(err);
-                            Body::wrap_stream(stream::iter([err]))
-                        }
+                    let body = match compio::fs::File::open(path_to_file).await {
+                        Ok(file) => Body::from(file),
+                        Err(err) => Body::stream(stream::iter([Err(cyper::Error::System(err))])),
                     };
 
                     Part::stream(body).file_name(filename)
@@ -231,157 +218,140 @@ impl InputFile {
     }
 }
 
-/// Adaptor for `AsyncRead` that allows clonning and converting to
-/// `multipart/form-data`
+/// Keeps cloned readers replayable while an unshared reader streams directly.
 #[derive(Clone)]
 struct Read {
-    inner: Arc<TakeCell<dyn AsyncRead + Send + Unpin>>,
-    buf: Arc<OnceCell<Result<Vec<Bytes>, Arc<io::Error>>>>,
-    notify: Arc<watch::Sender<()>>,
-    wait: watch::Receiver<()>,
+    inner: Rc<ReadInner>,
+}
+
+struct ReadInner {
+    buffer: async_lock::Mutex<ReadBuffer>,
+    complete: async_lock::OnceCell<Result<Vec<Bytes>, Arc<io::Error>>>,
+}
+
+struct ReadBuffer {
+    reader: LocalBoxStream<'static, io::Result<Bytes>>,
+    chunks: Vec<Bytes>,
 }
 
 impl Read {
-    fn new(it: Arc<TakeCell<dyn AsyncRead + Send + Unpin>>) -> Self {
-        let (tx, rx) = watch::channel(());
-
-        Self { inner: it, buf: Arc::default(), notify: Arc::new(tx), wait: rx }
+    fn new(reader: impl AsyncRead + 'static) -> Self {
+        let reader = stream::try_unfold(reader, |mut reader| async move {
+            let compio::BufResult(len, buffer) = reader.read(Vec::with_capacity(64 * 1024)).await;
+            match len? {
+                0 => Ok(None),
+                _ => Ok(Some((Bytes::from(buffer), reader))),
+            }
+        })
+        .boxed_local();
+        Self {
+            inner: Rc::new(ReadInner {
+                buffer: async_lock::Mutex::new(ReadBuffer { reader, chunks: Vec::new() }),
+                complete: async_lock::OnceCell::new(),
+            }),
+        }
     }
 
-    pub(crate) async fn into_part(mut self, filename: Cow<'static, str>) -> Part {
-        if !self.inner.is_taken() {
-            let res = ArcBox::<TakeCell<dyn AsyncRead + Send + Unpin>>::try_from(self.inner);
-            match res {
-                // Fast/easy path: this is the only file copy, so we can just forward the underlying
-                // `dyn AsyncRead` via some adaptors to reqwest.
-                Ok(arc_box) => {
-                    let fr = FramedRead::new(ExclusiveArcAsyncRead(arc_box), BytesDecoder);
-
-                    let body = Body::wrap_stream(fr);
-                    return Part::stream(body).file_name(filename);
+    async fn into_part(self, filename: Cow<'static, str>) -> Part {
+        let body = match Rc::try_unwrap(self.inner) {
+            Ok(inner) => {
+                match inner.complete.into_inner() {
+                    Some(result) => buffered_body(result),
+                    None => {
+                        let stream = inner.buffer.into_inner().reader.map_err(cyper::Error::System);
+                        // Cyper's Hyper body requires Send; InputFile and Bot remain local.
+                        Body::stream(send_wrapper::SendWrapper::new(stream))
+                    }
                 }
-                // move the arc back into `self`
-                Err(i) => self.inner = i,
             }
-        }
-
-        // Slow path: either wait until someone will read the whole `dyn AsyncRead` into
-        // a buffer, or be the one who reads
-        let body = self.into_shared_body().await;
-
+            Err(inner) => {
+                let result = inner.complete.get_or_init(|| async {
+                    let mut buffer = inner.buffer.lock().await;
+                    while let Some(chunk) = buffer.reader.next().await {
+                        match chunk {
+                            Ok(chunk) => buffer.chunks.push(chunk),
+                            Err(err) => return Err(Arc::new(err)),
+                        }
+                    }
+                    Ok(mem::take(&mut buffer.chunks))
+                }).await;
+                buffered_body(result.clone())
+            }
+        };
         Part::stream(body).file_name(filename)
     }
+}
 
-    async fn into_shared_body(mut self) -> Body {
-        match self.inner.take() {
-            // Read `dyn AsyncRead` into a buffer
-            Some(mut read_ref) => {
-                // Chunk size, arbitrary chosen to be 1KiB
-                const CHUNK: usize = 1024;
+fn buffered_body(result: Result<Vec<Bytes>, Arc<io::Error>>) -> Body {
+    match result {
+        Ok(chunks) => Body::stream(stream::iter(chunks.into_iter().map(Ok))),
+        Err(err) => Body::stream(stream::iter([Err(cyper::Error::System(io::Error::other(err)))])),
+    }
+}
 
-                let mut chunks = Vec::new();
-                let mut bytes = BytesMut::with_capacity(CHUNK);
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-                let res = loop {
-                    match (&mut read_ref).read_buf(&mut bytes).await {
-                        // eof
-                        Ok(0) if bytes.len() < bytes.capacity() => {
-                            chunks.push(bytes.freeze());
-
-                            break Ok(chunks);
-                        }
-
-                        // No space left in bytes, allocate a new chunk
-                        Ok(0) => {
-                            chunks.push(bytes.freeze());
-                            bytes = BytesMut::with_capacity(CHUNK);
-                        }
-
-                        // keep reading into the same chunk
-                        Ok(_) => {}
-
-                        // i/o error
-                        Err(err) => break Err(Arc::new(err)),
-                    }
-                };
-
-                // Initialize `buf` with the result.
-                // Error indicates that the `buf` was already initialized, but this can't happen
-                // since we synchronize through other means.
-                let r = self.buf.set(res);
-                debug_assert!(r.is_ok());
-
-                // Notify other tasks that `buf` is initialized.
-                // Error indicates that there is no one to notify anymore, but we don't care.
-                let _ = self.notify.send(());
-            }
-
-            // Wait until `dyn AsyncRead` is read into a buffer, if it hasn't been read yet
-            None if self.buf.get().is_none() => {
-                // Error indicates that the sender was dropped, by we hold `Arc<Sender>`, so
-                // this can't happen
-                let _ = self.wait.changed().await;
-            }
-
-            // Someone else has already initialized the buffer
-            None => {}
+    #[compio::test]
+    async fn every_clone_replays_a_cached_reader_error() {
+        let reader = stream::iter([
+            Ok(Bytes::from_static(b"prefix")),
+            Err(io::Error::other("fixture reader failure")),
+        ]).boxed_local();
+        let read = Read {
+            inner: Rc::new(ReadInner {
+                buffer: async_lock::Mutex::new(ReadBuffer { reader, chunks: Vec::new() }),
+                complete: async_lock::OnceCell::new(),
+            }),
         };
-
-        let buf = self.buf;
-        // unwrap: `OnceCell` is initialized in the match above before sending
-        // notification, so at this point it's already initialized.
-        match buf.get().unwrap() {
-            Ok(_) => {
-                // We can't use `.iter()` here, because the iterator must capture `buf`
-                let mut i = 0;
-                let iter = iter::from_fn(move || match buf.get().unwrap() {
-                    Ok(buf) if i >= buf.len() => None,
-                    Ok(buf) => {
-                        let res = buf[i].clone();
-                        i += 1;
-                        Some(Ok::<_, Infallible>(res))
-                    }
-                    // We've just checked in the above match, it's `Ok(_)`
-                    Err(_) => unreachable!(),
-                });
-
-                Body::wrap_stream(stream::iter(iter))
-            }
-
-            Err(err) => {
-                let err = Err::<Bytes, _>(Arc::clone(err));
-                Body::wrap_stream(stream::iter(iter::once(err)))
-            }
+        let clones = [read.clone(), read.clone(), read];
+        for read in clones {
+            let part = read.into_part(Cow::Borrowed("upload.bin")).await;
+            let result = cyper::multipart::Form::new().part("file", part).into_stream()
+                .try_collect::<Vec<_>>().await;
+            assert!(result.unwrap_err().to_string().contains("fixture reader failure"));
         }
     }
-}
 
-/// Wrapper over an `ArcBox` that implements `AsyncRead`.
-struct ExclusiveArcAsyncRead(ArcBox<TakeCell<dyn AsyncRead + Send + Unpin>>);
-
-impl AsyncRead for ExclusiveArcAsyncRead {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> task::Poll<io::Result<()>> {
-        let Self(inner) = Pin::get_mut(self);
-        let read: &mut (dyn AsyncRead + Unpin) = inner.get();
-        Pin::new(read).poll_read(cx, buf)
+    #[compio::test]
+    async fn final_clone_after_cancel_keeps_the_partial_buffer() {
+        let (release, wait) = futures::channel::oneshot::channel();
+        let reader = stream::iter([Ok(Bytes::from_static(b"cached prefix"))])
+            .chain(stream::once(async move {
+                wait.await.unwrap();
+                Ok(Bytes::from_static(b" and suffix"))
+            }))
+            .boxed_local();
+        let read = Read {
+            inner: Rc::new(ReadInner {
+                buffer: async_lock::Mutex::new(ReadBuffer { reader, chunks: Vec::new() }),
+                complete: async_lock::OnceCell::new(),
+            }),
+        };
+        let remaining = read.clone();
+        let mut initializing = Box::pin(read.into_part(Cow::Borrowed("upload.bin")));
+        assert!(futures::poll!(initializing.as_mut()).is_pending());
+        drop(initializing);
+        release.send(()).unwrap();
+        let part = remaining.into_part(Cow::Borrowed("upload.bin")).await;
+        let body = cyper::multipart::Form::new().part("file", part).into_stream()
+            .try_collect::<Vec<_>>().await.unwrap().concat();
+        let expected = b"cached prefix and suffix";
+        assert!(body.windows(expected.len()).any(|chunk| chunk == expected));
     }
-}
 
-struct BytesDecoder;
-
-impl Decoder for BytesDecoder {
-    type Item = Bytes;
-    type Error = io::Error;
-
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        if src.is_empty() {
-            return Ok(None);
+    #[compio::test]
+    async fn final_reader_clone_replays_the_buffer() {
+        let input = InputFile::read(&b"replayed upload bytes"[..]);
+        let remaining = input.clone();
+        for input in [input, remaining] {
+            let part = input.into_part().unwrap().await;
+            let chunks = cyper::multipart::Form::new().part("file", part).into_stream()
+                .try_collect::<Vec<_>>().await.unwrap();
+            let body = chunks.concat();
+            assert!(body.windows(b"replayed upload bytes".len()).any(|chunk| chunk == b"replayed upload bytes"));
         }
-        Ok(Some(src.split().freeze()))
     }
 }
 

@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## unreleased
 
+### Compio fork
+
+- [**BC**] Replace Tokio execution with native compio tasks and I/O, use Tako webhooks, and require Rust 1.99+.
+- [**BC**] Migrate HTTP clients, local request/handler futures, owned-buffer file I/O and storage driver APIs; see `MIGRATION_GUIDE.md`.
+
 ### Added
 
 - `MessageToEditHasNoText` variant to `ApiError` ([#1426](https://github.com/teloxide/teloxide/issues/1426))

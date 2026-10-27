@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-pub type BackoffStrategy = Box<dyn Send + Fn(u32) -> Duration>;
+pub type BackoffStrategy = Box<dyn Fn(u32) -> Duration>;
 
 /// Calculates the backoff time in seconds for exponential strategy with base 2
 ///

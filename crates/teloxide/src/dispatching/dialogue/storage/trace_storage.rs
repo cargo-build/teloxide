@@ -1,6 +1,6 @@
 use std::{fmt::Debug, sync::Arc};
 
-use futures::future::BoxFuture;
+use futures::future::LocalBoxFuture;
 use teloxide_core::types::ChatId;
 
 use crate::dispatching::dialogue::Storage;
@@ -28,16 +28,16 @@ impl<S> TraceStorage<S> {
 impl<S, D> Storage<D> for TraceStorage<S>
 where
     D: Debug,
-    S: Storage<D> + Send + Sync + 'static,
+    S: Storage<D> + 'static,
 {
     type Error = <S as Storage<D>>::Error;
 
     fn remove_dialogue(
         self: Arc<Self>,
         chat_id: ChatId,
-    ) -> BoxFuture<'static, Result<(), Self::Error>>
+    ) -> LocalBoxFuture<'static, Result<(), Self::Error>>
     where
-        D: Send + 'static,
+        D: 'static,
     {
         log::trace!("Removing dialogue #{chat_id}");
         <S as Storage<D>>::remove_dialogue(self.inner.clone(), chat_id)
@@ -47,9 +47,9 @@ where
         self: Arc<Self>,
         chat_id: ChatId,
         dialogue: D,
-    ) -> BoxFuture<'static, Result<(), Self::Error>>
+    ) -> LocalBoxFuture<'static, Result<(), Self::Error>>
     where
-        D: Send + 'static,
+        D: 'static,
     {
         Box::pin(async move {
             let to = format!("{dialogue:#?}");
@@ -62,7 +62,7 @@ where
     fn get_dialogue(
         self: Arc<Self>,
         chat_id: ChatId,
-    ) -> BoxFuture<'static, Result<Option<D>, Self::Error>> {
+    ) -> LocalBoxFuture<'static, Result<Option<D>, Self::Error>> {
         log::trace!("Requested a dialogue #{chat_id}");
         <S as Storage<D>>::get_dialogue(self.inner.clone(), chat_id)
     }

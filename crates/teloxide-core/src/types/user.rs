@@ -59,21 +59,21 @@ impl User {
     /// Returns an URL that links to this user in the form of
     /// `tg://user/?id=<...>`.
     #[must_use]
-    pub fn url(&self) -> reqwest::Url {
+    pub fn url(&self) -> url::Url {
         self.id.url()
     }
 
     /// Returns an URL that links to this user in the form of `t.me/<...>`.
     /// Returns `None` if `self.username.is_none()`.
     #[must_use]
-    pub fn tme_url(&self) -> Option<reqwest::Url> {
+    pub fn tme_url(&self) -> Option<url::Url> {
         Some(format!("https://t.me/{}", self.username.as_ref()?).parse().unwrap())
     }
 
     /// Returns an URL that links to this user in the form of `t.me/<...>` or
     /// `tg://user/?id=<...>`, preferring `t.me` one when possible.
     #[must_use]
-    pub fn preferably_tme_url(&self) -> reqwest::Url {
+    pub fn preferably_tme_url(&self) -> url::Url {
         self.tme_url().unwrap_or_else(|| self.url())
     }
 

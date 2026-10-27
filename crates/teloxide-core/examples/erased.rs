@@ -2,7 +2,7 @@ use std::{env::VarError, time::Duration};
 
 use teloxide_core::{adaptors::trace, prelude::*, types::ChatAction};
 
-#[tokio::main]
+#[compio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     pretty_env_logger::init();
 
@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     bot.send_chat_action(chat_id, ChatAction::Typing).await?;
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    compio::time::sleep(Duration::from_secs(1)).await;
     bot.send_message(chat_id, "Hey hey hey").await?;
 
     Ok(())

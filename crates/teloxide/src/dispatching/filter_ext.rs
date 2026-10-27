@@ -18,7 +18,7 @@ macro_rules! define_ext {
 
         impl<Out> $ext_name<Out> for $for_ty
         where
-            Out: Send + Sync + 'static,
+            Out: 'static,
         {
             $( define_ext!(@impl $for_ty, $func, $proj_fn $(, $Allowed )? ); )*
         }

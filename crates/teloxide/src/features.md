@@ -3,7 +3,7 @@
 | Feature              | Description |
 |----------------------|-------------|
 | `webhooks`           | Enables general webhook utilities (almost useless on its own). |
-| `webhooks-axum`      | Enables webhook implementation based on axum framework. |
+| `webhooks-tako`      | Enables webhook implementation based on Tako with the compio server. |
 | `macros`             | Re-exports macros from [`teloxide-macros`]. |
 | `ctrlc_handler`      | Enables the [`DispatcherBuilder::enable_ctrlc_handler`] function (**enabled by default**). |
 | `throttle`           | Enables the [`Throttle`](adaptors::Throttle) bot adaptor. |
@@ -15,8 +15,8 @@
 | `native-tls`         | Enables the [`native-tls`] TLS implementation (**enabled by default**). |
 | `rustls`             | Enables the [`rustls`] TLS implementation. |
 | `redis-storage`      | Enables the [Redis] storage support for dialogues. |
-| `sqlite-storage-nativetls`     | Enables the [Sqlite] storage support for dialogues (depends on `native-tls`). |
-| `sqlite-storage-rustls`     | Enables the [Sqlite] storage support for dialogues (depends on `rustls`, conflicts with `sqlite-storage-nativetls`). |
+| `sqlite-storage` | Enables SQLite dialogue storage on compio's blocking pool. |
+| `postgres-storage` | Enables PostgreSQL dialogue storage through the compio PostgreSQL adapter. TLS follows `native-tls`/`rustls`. |
 | `cbor-serializer`    | Enables the [CBOR] serializer for dialogues. |
 | `bincode-serializer` | Enables the [Bincode] serializer for dialogues. |
 

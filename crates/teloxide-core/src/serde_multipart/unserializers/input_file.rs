@@ -63,7 +63,7 @@ impl Serializer for InputFileUnserializer {
         match variant {
             "File" => Ok(InputFile::File(value.serialize(StringUnserializer)?.into())),
             "Url" => Ok(InputFile::Url(
-                reqwest::Url::parse(&value.serialize(StringUnserializer)?).unwrap(),
+                url::Url::parse(&value.serialize(StringUnserializer)?).unwrap(),
             )),
             "FileId" => Ok(InputFile::FileId(value.serialize(StringUnserializer)?)),
             name => Err(UnserializerError::UnexpectedVariant {

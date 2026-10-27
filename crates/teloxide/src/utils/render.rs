@@ -244,12 +244,12 @@ mod test {
             MessageEntity { kind: MEK::Underline, offset: 17, length: 4 },
             MessageEntity { kind: MEK::Strikethrough, offset: 17, length: 4 },
             MessageEntity {
-                kind: MEK::TextLink { url: reqwest::Url::parse("https://t.me/").unwrap() },
+                kind: MEK::TextLink { url: url::Url::parse("https://t.me/").unwrap() },
                 offset: 23,
                 length: 8,
             },
             MessageEntity {
-                kind: MEK::TextLink { url: reqwest::Url::parse("tg://user?id=1234567").unwrap() },
+                kind: MEK::TextLink { url: url::Url::parse("tg://user?id=1234567").unwrap() },
                 offset: 32,
                 length: 3,
             },

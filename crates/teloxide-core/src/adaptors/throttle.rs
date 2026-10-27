@@ -14,10 +14,8 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use tokio::sync::{
-    mpsc,
-    oneshot::{self},
-};
+use async_channel as mpsc;
+use futures::channel::oneshot;
 
 use crate::{errors::AsResponseParameters, requests::Requester, types::*};
 
@@ -49,7 +47,7 @@ pub use settings::{Limits, Settings};
 ///
 /// ## Examples
 ///
-/// ```no_run (throttle fails to spawn task without tokio runtime)
+/// ```no_run (throttle fails to spawn task without a compio runtime)
 /// use teloxide_core::{adaptors::throttle::Limits, requests::RequesterExt, Bot};
 ///
 /// let bot = Bot::new("TOKEN")
@@ -101,8 +99,8 @@ impl<B> Throttle<B> {
         B: Requester + Clone,
         B::Err: AsResponseParameters,
     {
-        let (tx, rx) = mpsc::channel(settings.limits.messages_per_sec_overall as usize);
-        let (info_tx, info_rx) = mpsc::channel(2);
+        let (tx, rx) = mpsc::bounded(settings.limits.messages_per_sec_overall as usize);
+        let (info_tx, info_rx) = mpsc::bounded(2);
 
         let worker = worker(settings, rx, info_rx, bot.clone());
         let this = Self { bot, queue: tx, info_tx };
@@ -110,34 +108,32 @@ impl<B> Throttle<B> {
         (this, worker)
     }
 
-    /// Creates new [`Throttle`] spawning the worker with `tokio::spawn`
+    /// Creates new [`Throttle`] spawning the worker on the current compio runtime
     ///
     /// Note: it's recommended to use [`RequesterExt::throttle`] instead.
     ///
     /// [`RequesterExt::throttle`]: crate::requests::RequesterExt::throttle
     pub fn new_spawn(bot: B, limits: Limits) -> Self
     where
-        B: Requester + Clone + Send + Sync + 'static,
+        B: Requester + Clone + 'static,
         B::Err: AsResponseParameters,
-        B::GetChat: Send,
     {
         let (this, worker) = Self::new(bot, limits);
 
-        tokio::spawn(worker);
+        compio::runtime::spawn(worker).detach();
 
         this
     }
 
-    /// Creates new [`Throttle`] spawning the worker with `tokio::spawn`
+    /// Creates new [`Throttle`] spawning the worker on the current compio runtime
     pub fn spawn_with_settings(bot: B, settings: Settings) -> Self
     where
-        B: Requester + Clone + Send + Sync + 'static,
+        B: Requester + Clone + 'static,
         B::Err: AsResponseParameters,
-        B::GetChat: Send,
     {
         let (this, worker) = Self::with_settings(bot, settings);
 
-        tokio::spawn(worker);
+        compio::runtime::spawn(worker).detach();
         this
     }
 

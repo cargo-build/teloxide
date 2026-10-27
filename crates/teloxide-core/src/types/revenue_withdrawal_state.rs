@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use reqwest::Url;
+use url::Url;
 use serde::{Deserialize, Serialize};
 
 /// This object describes the state of a revenue withdrawal operation.

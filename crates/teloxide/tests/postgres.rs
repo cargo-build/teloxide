@@ -9,11 +9,11 @@ use teloxide::{
 
 // These examples are meant to run under the CI with the postgres service
 // Were checked locally
-#[tokio::test]
+#[compio::test]
 #[cfg_attr(not(CI_POSTGRES), ignore)]
 async fn test_postgres_json() {
     let storage = PostgresStorage::open(
-        "postgres://teloxide:rewrite_it_in_rust@localhost:5432/test_postgres_json",
+        &database_url("test_postgres_json"),
         1,
         teloxide::dispatching::dialogue::serializer::Json,
     )
@@ -23,11 +23,11 @@ async fn test_postgres_json() {
     test_postgres(storage).await;
 }
 
-#[tokio::test]
+#[compio::test]
 #[cfg_attr(not(CI_POSTGRES), ignore)]
 async fn test_postgres_bincode() {
     let storage = PostgresStorage::open(
-        "postgres://teloxide:rewrite_it_in_rust@localhost:5432/test_postgres_bincode",
+        &database_url("test_postgres_bincode"),
         1,
         teloxide::dispatching::dialogue::serializer::Bincode,
     )
@@ -37,11 +37,11 @@ async fn test_postgres_bincode() {
     test_postgres(storage).await;
 }
 
-#[tokio::test]
+#[compio::test]
 #[cfg_attr(not(CI_POSTGRES), ignore)]
 async fn test_postgres_cbor() {
     let storage = PostgresStorage::open(
-        "postgres://teloxide:rewrite_it_in_rust@localhost:5432/test_postgres_cbor",
+        &database_url("test_postgres_cbor"),
         1,
         teloxide::dispatching::dialogue::serializer::Cbor,
     )
@@ -53,6 +53,19 @@ async fn test_postgres_cbor() {
 
 type Dialogue = String;
 
+fn database_url(database: &str) -> String {
+    let base = match std::env::var("TELOXIDE_TEST_POSTGRES_URL") {
+        Ok(base) => base,
+        Err(std::env::VarError::NotPresent) => {
+            "postgres://teloxide:rewrite_it_in_rust@localhost:5432".to_owned()
+        }
+        Err(error) => panic!("invalid PostgreSQL test URL environment: {error}"),
+    };
+    let mut url = url::Url::parse(&base).unwrap();
+    url.set_path(database);
+    url.into()
+}
+
 macro_rules! test_dialogues {
     ($storage:expr, $_0:expr, $_1:expr, $_2:expr) => {
         assert_eq!(Arc::clone(&$storage).get_dialogue(ChatId(1)).await.unwrap(), $_0);
@@ -63,7 +76,7 @@ macro_rules! test_dialogues {
 
 async fn test_postgres<S>(storage: Arc<PostgresStorage<S>>)
 where
-    S: Send + Sync + Serializer<Dialogue> + 'static,
+    S: Serializer<Dialogue> + 'static,
     <S as Serializer<Dialogue>>::Error: Debug + Display,
 {
     test_dialogues!(storage, None, None, None);
@@ -77,6 +90,12 @@ where
         Some("ABC".to_owned()),
         Some("DEF".to_owned()),
         Some("GHI".to_owned())
+    );
+
+    Arc::clone(&storage).update_dialogue(ChatId(1), "replacement".to_owned()).await.unwrap();
+    assert_eq!(
+        Arc::clone(&storage).get_dialogue(ChatId(1)).await.unwrap(),
+        Some("replacement".to_owned())
     );
 
     Arc::clone(&storage).remove_dialogue(ChatId(1)).await.unwrap();

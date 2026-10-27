@@ -27,16 +27,16 @@ where
 {
     /// The type of an error that may happen while sending a request to
     /// Telegram.
-    type Err: std::error::Error + Send;
+    type Err: std::error::Error;
 
     /// The type of the future returned by the [`send`](Request::send) method.
-    type Send: Future<Output = Result<Output<Self>, Self::Err>> + Send;
+    type Send: Future<Output = Result<Output<Self>, Self::Err>>;
 
     /// A type of the future returned by the [`send_ref`](Request::send_ref)
     /// method.
     // Note: it intentionally forbids borrowing from `self` though we couldn't allow
     // borrowing without GATs anyway.
-    type SendRef: Future<Output = Result<Output<Self>, Self::Err>> + Send;
+    type SendRef: Future<Output = Result<Output<Self>, Self::Err>>;
 
     /// Send this request.
     ///
