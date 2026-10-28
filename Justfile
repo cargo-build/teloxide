@@ -4,11 +4,11 @@ help:
 
 # Format code
 fmt:
-    cargo +nightly fmt --all
+    cargo +nightly-2026-10-26 fmt --all
 
 # Check formatting and run clippy
 lint:
-    cargo +nightly fmt --all --check || (echo "Run 'just fmt' to fix formatting!" && exit 1)
+    cargo +nightly-2026-10-26 fmt --all --check || (echo "Run 'just fmt' to fix formatting!" && exit 1)
     cargo +stable clippy --all-targets --features full
 
 # Run tests
@@ -17,7 +17,7 @@ test:
 
 # Test documentation
 docs:
-    cargo +nightly docs
+    cargo +nightly-2026-10-26 docs
 
 # Run all checks we do in CI (lint + test + docs)
 ci:

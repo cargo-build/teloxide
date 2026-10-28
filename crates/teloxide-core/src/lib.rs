@@ -65,7 +65,7 @@
 //
 // To properly build docs of this crate run
 // ```console
-// $ cargo docs
+// $ cargo +nightly-2026-10-26 docs
 // ```
 // (docs alias is defined in `.cargo/config.toml`)
 //

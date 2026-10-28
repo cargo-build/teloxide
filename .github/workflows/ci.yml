@@ -57,7 +57,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       - name: Install Rust ${{ env.rust_nightly }}
         uses: dtolnay/rust-toolchain@master
@@ -70,7 +70,7 @@ jobs:
 
       - name: Check formatting
         run: |
-          cargo fmt --all -- --check
+          cargo +${{ env.rust_nightly }} fmt --all -- --check
 
   test:
     name: Test
@@ -106,19 +106,25 @@ jobs:
             features: "--features full"
           - rust: nightly
             toolchain: nightly-2026-10-26
-            features: "--features full nightly"
+            features: "--features full,nightly"
           - rust: msrv
             toolchain: 1.99.0
             features: "--features full"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       - name: Install Rust ${{ matrix.toolchain }}
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
+
+      - name: Install source-generation formatter
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.rust_nightly }}
+          components: rustfmt
 
       - name: Cache Dependencies
         uses: Swatinem/rust-cache@v2
@@ -176,7 +182,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@master
@@ -201,7 +207,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       - name: Install Rust ${{ env.rust_nightly }}
         uses: dtolnay/rust-toolchain@master
@@ -214,7 +220,7 @@ jobs:
 
       - name: clippy
         run: |
-          cargo clippy --all-targets --features "full nightly"
+          cargo +${{ env.rust_nightly }} clippy --all-targets --features "full nightly"
 
   doc:
     name: check docs
@@ -222,7 +228,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v7
 
       - name: Install Rust ${{ env.rust_nightly }}
         uses: dtolnay/rust-toolchain@master
@@ -234,4 +240,4 @@ jobs:
 
       - name: rustdoc
         run: |
-          cargo docs # from .cargo/config.toml
+          cargo +${{ env.rust_nightly }} docs # from .cargo/config.toml

@@ -95,6 +95,13 @@ devpod up https://github.com/teloxide/teloxide
 
 ### Testing
 
+The fork defaults to stable Rust. Source generation and nightly checks use a pinned
+formatter and compiler:
+
+```shell
+rustup toolchain install nightly-2026-10-26 --profile minimal --component rustfmt --component clippy
+```
+
 When you open a PR, it will be tested in the CI. We recommend you test the PR before opening it:
 
 ```shell
@@ -105,17 +112,17 @@ Or manually, if you don't have `just` tool:
 
 ```shell
 # Formatting (use `-- --check` if you only want to check)
-cargo fmt --all
+cargo +nightly-2026-10-26 fmt --all
 
 # Run linter (compiles code too)
-cargo clippy --all-targets --features "full nightly"
+cargo +nightly-2026-10-26 clippy --all-targets --features "full nightly"
 
 # Running tests
-cargo test --features "full nightly"
+cargo +nightly-2026-10-26 test --features "full nightly"
 
 # Documentation (use --open if you want to open it in a browser)
 # (note the -s, `docs` is an alias to pass some additional flags to `rustdoc`)
-cargo docs
+cargo +nightly-2026-10-26 docs
 ```
 
 ### Making a TBA update
@@ -409,7 +416,7 @@ That's the basics, for more info about .ron file look at the other methods or as
 
 #### Step 2:
 
-Run `cargo test --features "full nightly"` or `just test`. This will trigger the codegen scripts, and .ron will be converted to code!
+Run `cargo +nightly-2026-10-26 test --features "full nightly"` or `just test`. This will trigger the codegen scripts, and .ron will be converted to code!
 
 #### Step 3:
 
